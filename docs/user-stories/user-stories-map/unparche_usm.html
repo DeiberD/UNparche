@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>User Story Map — UNparche</title>
+  <link rel="stylesheet" href="unparche_usm.css">
+</head>
+<body>
+
+<div class="usm-page">
+
+  <!-- ── Encabezado ───────────────────────────────────────── -->
+  <header class="usm-header">
+    <div class="usm-header-inner">
+      <div class="usm-title-block">
+        <span class="usm-app-name">UNparche &nbsp;·&nbsp; UNAL Bogotá</span>
+        <h1>User Story Map</h1>
+        <p class="usm-subtitle">App móvil para descubrir eventos del campus · 10 módulos · 3 sprints · 35 historias</p>
+      </div>
+      <div class="usm-sprint-chips">
+        <span class="usm-sprint-chip" data-sprint="1">Sprint 1 · Must Have</span>
+        <span class="usm-sprint-chip" data-sprint="2">Sprint 2 · Should Have</span>
+        <span class="usm-sprint-chip" data-sprint="3">Sprint 3 · Could Have</span>
+      </div>
+    </div>
+  </header>
+
+  <div class="usm-scroll-hint">← Desplaza horizontalmente para ver todas las épicas →</div>
+
+  <!-- ── Tabla principal ──────────────────────────────────── -->
+  <div class="usm-scroll">
+    <table class="usm-table" id="usm-table"></table>
+  </div>
+
+  <!-- ── Leyenda ──────────────────────────────────────────── -->
+  <div class="usm-legend" id="usm-legend"></div>
+
+</div><!-- /.usm-page -->
+
+<script>
+/* 
+   DATOS
+*/
+
+/** Épicas (= módulos del proyecto) */
+const EPICS = [
+  { name: 'Gestión de Perfil',         color: 'indigo', span: 2 },
+  { name: 'Grupos',                    color: 'teal',   span: 2 },
+  { name: 'Mapa del Campus',           color: 'green',  span: 3 },
+  { name: 'Vista de Lista',            color: 'amber',  span: 1 },
+  { name: 'Interacción con Eventos',   color: 'orange', span: 2 },
+  { name: 'Chat del Evento',           color: 'rose',   span: 2 },
+  { name: 'Pestaña de Eventos',        color: 'violet', span: 2 },
+  { name: 'Creación y Edición',        color: 'sky',    span: 2 },
+  { name: 'Sistema de Amigos',         color: 'lime',   span: 2 },
+  { name: 'Ciclo de Vida',             color: 'slate',  span: 1 },
+];
+
+/** Columnas: actividad + tarea (cada una es una columna del mapa) */
+const COLS = [
+  // Gestión de Perfil (epic 0) — 2 cols
+  { epic: 0, activity: 'Autenticación',      task: 'Registro institucional' },
+  { epic: 0, activity: 'Perfil de usuario',  task: 'Ver y editar perfil'    },
+  // Grupos (epic 1) — 2 cols
+  { epic: 1, activity: 'Administrar grupos', task: 'Crear y verificar'      },
+  { epic: 1, activity: 'Descubrir grupos',   task: 'Explorar y unirse'      },
+  // Mapa del Campus (epic 2) — 3 cols
+  { epic: 2, activity: 'Ver eventos en mapa',  task: 'Visualización'        },
+  { epic: 2, activity: 'Navegar el mapa',      task: 'Desplazar y agrupar'  },
+  { epic: 2, activity: 'Filtrar en mapa',      task: 'Búsqueda de eventos'  },
+  // Vista de Lista (epic 3) — 1 col
+  { epic: 3, activity: 'Lista de eventos',     task: 'Consulta y filtrado'  },
+  // Interacción con Eventos (epic 4) — 2 cols
+  { epic: 4, activity: 'Detalle del evento',   task: 'Consultar y asistir'  },
+  { epic: 4, activity: 'Comunicados',          task: 'Notificaciones y anuncios' },
+  // Chat del Evento (epic 5) — 2 cols
+  { epic: 5, activity: 'Chat en tiempo real',  task: 'Mensajería grupal'    },
+  { epic: 5, activity: 'Gestión del chat',     task: 'Configurar y roles'   },
+  // Pestaña de Eventos (epic 6) — 2 cols
+  { epic: 6, activity: 'Mis eventos',          task: 'Calendario e historial' },
+  { epic: 6, activity: 'Gestionar eventos',    task: 'Edición y cancelación' },
+  // Creación y Edición (epic 7) — 2 cols
+  { epic: 7, activity: 'Crear evento',         task: 'Formulario base'       },
+  { epic: 7, activity: 'Configurar evento',    task: 'Visibilidad y recurrencia' },
+  // Sistema de Amigos (epic 8) — 2 cols
+  { epic: 8, activity: 'Red de amigos',        task: 'Gestión de contactos'  },
+  { epic: 8, activity: 'Conectar amigos',      task: 'Solicitudes e invitaciones' },
+  // Ciclo de Vida (epic 9) — 1 col
+  { epic: 9, activity: 'Automatización',       task: 'Ciclo de vida del evento' },
+];
+
+/**
+ * Historias de usuario
+ * col    - índice de columna (0-18)
+ * sprint - 1 Must Have · 2 Should Have · 3 Could Have
+ * role   - comunitario | organizador | admingrupo | sistema
+ * id     - identificador HU
+ * text   - descripción breve
+ */
+const STORIES = [
+  // ── SPRINT 1 — Must Have 
+  { col:  4, sprint: 1, role: 'comunitario', id: 'HU-08', text: 'Ver eventos del día en el mapa del campus' },
+  { col:  5, sprint: 1, role: 'comunitario', id: 'HU-10', text: 'Desplazarse y hacer zoom en el mapa' },
+  { col:  5, sprint: 1, role: 'comunitario', id: 'HU-11', text: 'Agrupar eventos cercanos al alejar el mapa' },
+  { col:  6, sprint: 1, role: 'comunitario', id: 'HU-09', text: 'Filtrar eventos por grupo, categoría y fecha' },
+  { col:  7, sprint: 1, role: 'comunitario', id: 'HU-13', text: 'Consultar eventos en vista de lista' },
+  { col:  8, sprint: 1, role: 'comunitario', id: 'HU-15', text: 'Ver información completa de un evento' },
+  { col:  8, sprint: 1, role: 'comunitario', id: 'HU-16', text: 'Confirmar o cancelar asistencia a un evento' },
+  { col: 10, sprint: 1, role: 'comunitario', id: 'HU-20', text: 'Participar en el chat grupal en tiempo real' },
+  { col: 14, sprint: 1, role: 'comunitario', id: 'HU-27', text: 'Crear un evento con información básica y ubicación' },
+  { col: 15, sprint: 1, role: 'organizador', id: 'HU-28', text: 'Configurar la visibilidad del evento' },
+  { col: 18, sprint: 1, role: 'sistema',     id: 'HU-36', text: 'Eliminar automáticamente eventos finalizados 24 h después' },
+
+  // ── SPRINT 2 — Should Have 
+  { col:  1, sprint: 2, role: 'comunitario', id: 'HU-03', text: 'Consultar perfil de otro usuario en modo lectura' },
+  { col:  7, sprint: 2, role: 'comunitario', id: 'HU-14', text: 'Filtrar eventos en la vista de lista' },
+  { col:  9, sprint: 2, role: 'comunitario', id: 'HU-17', text: 'Activar notificaciones push de un evento' },
+  { col:  9, sprint: 2, role: 'organizador', id: 'HU-19', text: 'Publicar anuncios dentro de un evento' },
+  { col: 11, sprint: 2, role: 'comunitario', id: 'HU-21', text: 'Distinguir mensajes del organizador en el chat' },
+  { col: 11, sprint: 2, role: 'organizador', id: 'HU-22', text: 'Habilitar o deshabilitar el chat del evento' },
+  { col: 12, sprint: 2, role: 'comunitario', id: 'HU-23', text: 'Ver en calendario los eventos confirmados' },
+  { col: 12, sprint: 2, role: 'organizador', id: 'HU-25', text: 'Ver lista de eventos creados por el usuario' },
+  { col: 13, sprint: 2, role: 'organizador', id: 'HU-31', text: 'Cancelar un evento propio' },
+  { col: 15, sprint: 2, role: 'organizador', id: 'HU-29', text: 'Asociar evento a un grupo propio' },
+  { col: 15, sprint: 2, role: 'organizador', id: 'HU-30', text: 'Programar evento como recurrente' },
+
+  // ── SPRINT 3 — Could Have 
+  { col:  0, sprint: 3, role: 'comunitario', id: 'HU-01', text: 'Crear cuenta con correo institucional @unal.edu.co' },
+  { col:  1, sprint: 3, role: 'comunitario', id: 'HU-02', text: 'Editar foto de perfil, carrera e información personal' },
+  { col:  2, sprint: 3, role: 'comunitario', id: 'HU-04', text: 'Crear un grupo no oficial en el campus' },
+  { col:  2, sprint: 3, role: 'admingrupo',  id: 'HU-05', text: 'Solicitar verificación oficial del grupo' },
+  { col:  3, sprint: 3, role: 'comunitario', id: 'HU-06', text: 'Unirse a grupos únicamente mediante invitación' },
+  { col:  3, sprint: 3, role: 'comunitario', id: 'HU-07', text: 'Explorar y filtrar grupos oficiales y no oficiales' },
+  { col:  6, sprint: 3, role: 'comunitario', id: 'HU-12', text: 'Identificar eventos con asistencia de amigos en el mapa' },
+  { col:  8, sprint: 3, role: 'comunitario', id: 'HU-18', text: 'Consultar lista de personas confirmadas al evento' },
+  { col: 12, sprint: 3, role: 'comunitario', id: 'HU-24', text: 'Consultar historial de eventos pasados asistidos' },
+  { col: 13, sprint: 3, role: 'organizador', id: 'HU-26', text: 'Editar, cancelar, duplicar o reagendar eventos propios' },
+  { col: 16, sprint: 3, role: 'comunitario', id: 'HU-32', text: 'Ver lista de amigos y consultar sus perfiles' },
+  { col: 16, sprint: 3, role: 'comunitario', id: 'HU-33', text: 'Enviar, aceptar o rechazar solicitudes de amistad' },
+  { col: 16, sprint: 3, role: 'comunitario', id: 'HU-34', text: 'Eliminar amigos de la lista de contactos' },
+  { col: 17, sprint: 3, role: 'comunitario', id: 'HU-35', text: 'Invitar a un amigo a un evento de interés' },
+];
+
+/* 
+   HELPERS
+*/
+const ROLE_LABELS = {
+  comunitario: 'Comunitario',
+  organizador: 'Organizador',
+  admingrupo:  'Admin. Grupo',
+  sistema:     'Sistema',
+};
+
+function storiesAt(col, sprint) {
+  return STORIES.filter(s => s.col === col && s.sprint === sprint);
+}
+
+function el(tag, attrs = {}, ...children) {
+  const e = document.createElement(tag);
+  Object.entries(attrs).forEach(([k, v]) => {
+    if (k === 'class') e.className = v;
+    else if (k.startsWith('data-')) e.setAttribute(k, v);
+    else e[k] = v;
+  });
+  children.forEach(c => {
+    if (typeof c === 'string') e.appendChild(document.createTextNode(c));
+    else if (c) e.appendChild(c);
+  });
+  return e;
+}
+
+function td(...children) {
+  return el('td', {}, ...children);
+}
+
+function emptyTd() {
+  const t = el('td');
+  t.appendChild(el('div', { style: 'min-height:20px' }));
+  return t;
+}
+
+/*
+   CONSTRUCCIÓN DE LA TABLA
+*/
+function buildTable() {
+  const table = document.getElementById('usm-table');
+  const TOTAL_COLS = COLS.length + 1; // +1 por columna de sprint label
+
+  /* ── Fila de anchos (col group) ── */
+  const sizeRow = el('tr');
+  sizeRow.appendChild(el('td', { class: 'col-label' }));
+  COLS.forEach(() => sizeRow.appendChild(el('td', { class: 'col-data' })));
+  table.appendChild(sizeRow);
+
+  /* ── Fila de épicas ── */
+  const epicRow = el('tr');
+  epicRow.appendChild(td()); // celda vacía sobre sprint label
+  EPICS.forEach(epic => {
+    const cell = el('td');
+    cell.colSpan = epic.span;
+    cell.appendChild(el('div', { class: 'usm-epic', 'data-color': epic.color }, epic.name));
+    epicRow.appendChild(cell);
+  });
+  table.appendChild(epicRow);
+
+  /* ── Fila de actividades ── */
+  const actRow = el('tr');
+  actRow.appendChild(td());
+  COLS.forEach(col => {
+    const color = EPICS[col.epic].color;
+    actRow.appendChild(td(el('div', { class: 'usm-activity', 'data-color': color }, col.activity)));
+  });
+  table.appendChild(actRow);
+
+  /* ── Fila de tareas ── */
+  const taskRow = el('tr');
+  taskRow.appendChild(td());
+  COLS.forEach(col => {
+    const color = EPICS[col.epic].color;
+    taskRow.appendChild(td(el('div', { class: 'usm-task', 'data-color': color }, col.task)));
+  });
+  table.appendChild(taskRow);
+
+  /* ── Backbone ── */
+  const bkRow = el('tr');
+  const bkTd = el('td');
+  bkTd.colSpan = TOTAL_COLS;
+  bkTd.appendChild(el('div', { class: 'usm-backbone' }));
+  bkRow.appendChild(bkTd);
+  table.appendChild(bkRow);
+
+  /* ── Filas de sprints ── */
+  let delay = 0;
+  [1, 2, 3].forEach(sprint => {
+    const sprintRow = el('tr');
+
+    /* Etiqueta de sprint (columna sticky) */
+    const labelTd = el('td');
+    const label = el('div', { class: 'usm-sprint-label', 'data-sprint': String(sprint) },
+      `Sprint\n${sprint}`
+    );
+    labelTd.appendChild(label);
+    sprintRow.appendChild(labelTd);
+
+    /* Celdas con historias */
+    COLS.forEach((_, colIdx) => {
+      const ss = storiesAt(colIdx, sprint);
+      if (!ss.length) {
+        sprintRow.appendChild(emptyTd());
+        return;
+      }
+      const cell = el('td');
+      ss.forEach((story) => {
+        const card = el('div', {
+          class: 'usm-story-card',
+          'data-sprint': String(sprint),
+          style: `animation-delay:${(delay++ * 0.035).toFixed(3)}s`,
+        });
+        card.appendChild(el('span', { class: 'usm-role-badge', 'data-role': story.role },
+          ROLE_LABELS[story.role]
+        ));
+        card.appendChild(el('span', { class: 'usm-hu-id' }, story.id));
+        card.appendChild(el('p', { class: 'usm-story-text' }, story.text));
+        cell.appendChild(card);
+      });
+      sprintRow.appendChild(cell);
+    });
+
+    table.appendChild(sprintRow);
+
+    /* Separador entre sprints */
+    if (sprint < 3) {
+      const sepRow = el('tr');
+      const sepTd = el('td');
+      sepTd.colSpan = TOTAL_COLS;
+      sepTd.appendChild(el('div', { class: 'usm-sprint-divider' }));
+      sepRow.appendChild(sepTd);
+      table.appendChild(sepRow);
+    }
+  });
+}
+
+/* 
+   CONSTRUCCIÓN DE LA LEYENDA
+*/
+function buildLegend() {
+  const legend = document.getElementById('usm-legend');
+
+  /* Épicas */
+  const epicSection = el('div', { class: 'usm-legend-section' });
+  epicSection.appendChild(el('span', { class: 'usm-legend-label' }, 'Épicas'));
+  EPICS.forEach(epic => {
+    epicSection.appendChild(el('span', { class: 'usm-legend-epic', 'data-color': epic.color }, epic.name));
+  });
+  legend.appendChild(epicSection);
+
+  /* Sprints */
+  const sprintSection = el('div', { class: 'usm-legend-section' });
+  sprintSection.appendChild(el('span', { class: 'usm-legend-label' }, 'Sprints'));
+  [
+    [1, 'Sprint 1 · Must Have'],
+    [2, 'Sprint 2 · Should Have'],
+    [3, 'Sprint 3 · Could Have'],
+  ].forEach(([s, label]) => {
+    sprintSection.appendChild(el('span', { class: 'usm-legend-pill', 'data-sprint': String(s) }, label));
+  });
+  legend.appendChild(sprintSection);
+
+  /* Roles */
+  const roleSection = el('div', { class: 'usm-legend-section' });
+  roleSection.appendChild(el('span', { class: 'usm-legend-label' }, 'Roles'));
+  Object.entries(ROLE_LABELS).forEach(([key, label]) => {
+    roleSection.appendChild(el('span', { class: 'usm-legend-pill', 'data-role': key }, label));
+  });
+  legend.appendChild(roleSection);
+}
+
+/* 
+   INIT
+*/
+buildTable();
+buildLegend();
+</script>
+</body>
+</html>

@@ -1,0 +1,446 @@
+/* 
+   unparche_usm.css — User Story Map · UNparche
+   Estructura: .usm-page > .usm-scroll > table.usm-table
+   Clases:     .usm-epic, .usm-activity, .usm-task
+               .usm-sprint-label, .usm-story-card, .usm-role-badge
+               .usm-hu-id
+   Atributos:  data-color="indigo|teal|green|amber|orange|rose|violet|sky|lime|slate"
+               data-sprint="1|2|3"
+               data-role="comunitario|organizador|admingrupo|sistema"
+*/
+
+@import url('https://fonts.googleapis.com/css2?family=Syne:wght@600;700;800&family=Epilogue:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap');
+
+/* ── Tokens ──────────────────────────────────────────────────── */
+:root {
+  --font-display: 'Syne', sans-serif;
+  --font-body:    'Epilogue', sans-serif;
+  --font-mono:    'JetBrains Mono', monospace;
+
+  /* Superficie */
+  --page-bg:        #FFFFFF;
+  --surface:        #FFFFFF;
+  --border:         #E2DDD5;
+  --border-strong:  #C5BEB3;
+  --text-primary:   #1A1916;
+  --text-secondary: #6B6760;
+  --text-tertiary:  #A8A49E;
+
+  /* Sprints */
+  --s1-bg: #EBF5E1; --s1-border: #5A9C2A; --s1-acc: #2E6610; --s1-txt: #1A4205;
+  --s2-bg: #FFF8E6; --s2-border: #D4900F; --s2-acc: #7C500A; --s2-txt: #4A2E02;
+  --s3-bg: #FEF0F0; --s3-border: #D94545; --s3-acc: #8B1A1A; --s3-txt: #4A0C0C;
+
+  /* Épicas — 10 colores */
+  --indigo-e: #EEF2FF; --indigo-m: #C7D2FE; --indigo-a: #4338CA; --indigo-t: #312E81;
+  --teal-e:   #F0FDFA; --teal-m:   #99F6E4; --teal-a:   #0F766E; --teal-t:   #134E4A;
+  --green-e:  #F0FDF4; --green-m:  #BBF7D0; --green-a:  #15803D; --green-t:  #14532D;
+  --amber-e:  #FFFBEB; --amber-m:  #FDE68A; --amber-a:  #B45309; --amber-t:  #78350F;
+  --orange-e: #FFF7ED; --orange-m: #FED7AA; --orange-a: #C2410C; --orange-t: #7C2D12;
+  --rose-e:   #FFF1F2; --rose-m:   #FECDD3; --rose-a:   #BE123C; --rose-t:   #881337;
+  --violet-e: #F5F3FF; --violet-m: #DDD6FE; --violet-a: #6D28D9; --violet-t: #4C1D95;
+  --sky-e:    #F0F9FF; --sky-m:    #BAE6FD; --sky-a:    #0369A1; --sky-t:    #0C4A6E;
+  --lime-e:   #F7FEE7; --lime-m:   #D9F99D; --lime-a:   #4D7C0F; --lime-t:   #365314;
+  --slate-e:  #F8FAFC; --slate-m:  #CBD5E1; --slate-a:  #475569; --slate-t:  #1E293B;
+
+  /* Roles */
+  --rc-bg: #EFF6FF; --rc-txt: #1D4ED8;
+  --ro-bg: #FFF7ED; --ro-txt: #C2410C;
+  --ra-bg: #F5F3FF; --ra-txt: #6D28D9;
+  --rs-bg: #F8FAFC; --rs-txt: #475569;
+
+  /* Tamaños */
+  --col-w:   148px;
+  --label-w:  58px;
+  --gap:        5px;
+  --r-xs:       4px;
+  --r-sm:       6px;
+  --r-md:       9px;
+  --r-lg:      13px;
+}
+
+/* ── Reset ───────────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+/* ── Página ──────────────────────────────────────────────────── */
+body {
+  background: var(--page-bg);
+  font-family: var(--font-body);
+  color: var(--text-primary);
+  min-height: 100vh;
+  padding: 2rem 1.5rem 3rem;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ── Encabezado ──────────────────────────────────────────────── */
+.usm-header { margin-bottom: 1.5rem; }
+
+.usm-header-inner {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.usm-title-block h1 {
+  font-family: var(--font-display);
+  font-size: 1.65rem;
+  font-weight: 800;
+  letter-spacing: -0.035em;
+  color: var(--text-primary);
+  line-height: 1;
+}
+
+.usm-title-block .usm-app-name {
+  display: inline-block;
+  margin-top: 4px;
+  font-family: var(--font-display);
+  font-size: 0.875rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+.usm-subtitle {
+  margin-top: 5px;
+  font-size: 0.8125rem;
+  color: var(--text-tertiary);
+  font-weight: 300;
+  max-width: 480px;
+}
+
+/* Badges de sprint en el header */
+.usm-sprint-chips {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.usm-sprint-chip {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  padding: 4px 10px;
+  border-radius: 20px;
+  border: 1.5px solid;
+  letter-spacing: 0.03em;
+}
+
+.usm-sprint-chip[data-sprint="1"] { background: var(--s1-bg); color: var(--s1-txt); border-color: var(--s1-border); }
+.usm-sprint-chip[data-sprint="2"] { background: var(--s2-bg); color: var(--s2-txt); border-color: var(--s2-border); }
+.usm-sprint-chip[data-sprint="3"] { background: var(--s3-bg); color: var(--s3-txt); border-color: var(--s3-border); }
+
+/* ── Hint de scroll ──────────────────────────────────────────── */
+.usm-scroll-hint {
+  display: none;
+  font-size: 11px;
+  color: var(--text-tertiary);
+  font-family: var(--font-mono);
+  letter-spacing: 0.04em;
+  margin-bottom: 10px;
+  text-align: center;
+}
+
+@media (max-width: 900px) {
+  .usm-scroll-hint { display: block; }
+}
+
+/* ── Contenedor con scroll ───────────────────────────────────── */
+.usm-scroll {
+  overflow-x: auto;
+  overflow-y: visible;
+  padding-bottom: 1rem;
+  /* Fading edges para indicar scroll */
+  -webkit-mask-image: linear-gradient(to right, transparent 0, black 16px, black calc(100% - 16px), transparent 100%);
+          mask-image: linear-gradient(to right, transparent 0, black 16px, black calc(100% - 16px), transparent 100%);
+}
+
+@media (max-width: 900px) {
+  .usm-scroll {
+    -webkit-mask-image: none;
+            mask-image: none;
+  }
+}
+
+.usm-scroll::-webkit-scrollbar        { height: 4px; }
+.usm-scroll::-webkit-scrollbar-track  { background: var(--border); border-radius: 2px; }
+.usm-scroll::-webkit-scrollbar-thumb  { background: var(--border-strong); border-radius: 2px; }
+
+/* ── Tabla ───────────────────────────────────────────────────── */
+.usm-table {
+  border-collapse: separate;
+  border-spacing: var(--gap);
+  min-width: max-content;
+  table-layout: fixed;
+}
+
+.usm-table td { vertical-align: top; padding: 0; }
+
+/* Columna de etiquetas de sprint — sticky */
+.usm-table tr > td:first-child {
+  width: var(--label-w);
+  min-width: var(--label-w);
+  position: sticky;
+  left: 0;
+  z-index: 3;
+  /* cubre el gap de border-spacing al hacer scroll */
+  background: var(--page-bg);
+  box-shadow: calc(var(--gap)) 0 0 var(--page-bg);
+}
+
+/* Columnas de datos */
+.usm-table tr > td:not(:first-child) {
+  width: var(--col-w);
+  min-width: var(--col-w);
+}
+
+/* ── Épica ───────────────────────────────────────────────────── */
+.usm-epic {
+  border-radius: var(--r-md);
+  padding: 8px 11px;
+  text-align: center;
+  font-family: var(--font-display);
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  border: 1.5px solid transparent;
+  line-height: 1.25;
+}
+
+.usm-epic[data-color="indigo"] { background: var(--indigo-e); color: var(--indigo-t); border-color: var(--indigo-m); }
+.usm-epic[data-color="teal"]   { background: var(--teal-e);   color: var(--teal-t);   border-color: var(--teal-m);   }
+.usm-epic[data-color="green"]  { background: var(--green-e);  color: var(--green-t);  border-color: var(--green-m);  }
+.usm-epic[data-color="amber"]  { background: var(--amber-e);  color: var(--amber-t);  border-color: var(--amber-m);  }
+.usm-epic[data-color="orange"] { background: var(--orange-e); color: var(--orange-t); border-color: var(--orange-m); }
+.usm-epic[data-color="rose"]   { background: var(--rose-e);   color: var(--rose-t);   border-color: var(--rose-m);   }
+.usm-epic[data-color="violet"] { background: var(--violet-e); color: var(--violet-t); border-color: var(--violet-m); }
+.usm-epic[data-color="sky"]    { background: var(--sky-e);    color: var(--sky-t);    border-color: var(--sky-m);    }
+.usm-epic[data-color="lime"]   { background: var(--lime-e);   color: var(--lime-t);   border-color: var(--lime-m);   }
+.usm-epic[data-color="slate"]  { background: var(--slate-e);  color: var(--slate-t);  border-color: var(--slate-m);  }
+
+/* ── Actividad ───────────────────────────────────────────────── */
+.usm-activity {
+  border-radius: var(--r-sm);
+  padding: 5px 9px;
+  text-align: center;
+  font-family: var(--font-body);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.usm-activity[data-color="indigo"] { background: var(--indigo-m); color: var(--indigo-t); }
+.usm-activity[data-color="teal"]   { background: var(--teal-m);   color: var(--teal-t);   }
+.usm-activity[data-color="green"]  { background: var(--green-m);  color: var(--green-t);  }
+.usm-activity[data-color="amber"]  { background: var(--amber-m);  color: var(--amber-t);  }
+.usm-activity[data-color="orange"] { background: var(--orange-m); color: var(--orange-t); }
+.usm-activity[data-color="rose"]   { background: var(--rose-m);   color: var(--rose-t);   }
+.usm-activity[data-color="violet"] { background: var(--violet-m); color: var(--violet-t); }
+.usm-activity[data-color="sky"]    { background: var(--sky-m);    color: var(--sky-t);    }
+.usm-activity[data-color="lime"]   { background: var(--lime-m);   color: var(--lime-t);   }
+.usm-activity[data-color="slate"]  { background: var(--slate-m);  color: var(--slate-t);  }
+
+/* ── Tarea ───────────────────────────────────────────────────── */
+.usm-task {
+  border-radius: var(--r-sm);
+  padding: 5px 9px;
+  text-align: center;
+  font-size: 10.5px;
+  font-weight: 400;
+  border: 1.5px dashed;
+  line-height: 1.35;
+}
+
+.usm-task[data-color="indigo"] { background: var(--indigo-e); color: var(--indigo-t); border-color: var(--indigo-a); }
+.usm-task[data-color="teal"]   { background: var(--teal-e);   color: var(--teal-t);   border-color: var(--teal-a);   }
+.usm-task[data-color="green"]  { background: var(--green-e);  color: var(--green-t);  border-color: var(--green-a);  }
+.usm-task[data-color="amber"]  { background: var(--amber-e);  color: var(--amber-t);  border-color: var(--amber-a);  }
+.usm-task[data-color="orange"] { background: var(--orange-e); color: var(--orange-t); border-color: var(--orange-a); }
+.usm-task[data-color="rose"]   { background: var(--rose-e);   color: var(--rose-t);   border-color: var(--rose-a);   }
+.usm-task[data-color="violet"] { background: var(--violet-e); color: var(--violet-t); border-color: var(--violet-a); }
+.usm-task[data-color="sky"]    { background: var(--sky-e);    color: var(--sky-t);    border-color: var(--sky-a);    }
+.usm-task[data-color="lime"]   { background: var(--lime-e);   color: var(--lime-t);   border-color: var(--lime-a);   }
+.usm-task[data-color="slate"]  { background: var(--slate-e);  color: var(--slate-t);  border-color: var(--slate-a);  }
+
+/* ── Línea backbone ──────────────────────────────────────────── */
+.usm-backbone {
+  height: 2px;
+  border-radius: 1px;
+  background: linear-gradient(to right, var(--border-strong) 70%, transparent);
+}
+
+/* ── Separador entre sprints ─────────────────────────────────── */
+.usm-sprint-divider { height: 1px; background: var(--border); border-radius: 1px; }
+
+/* ── Etiqueta de sprint ──────────────────────────────────────── */
+.usm-sprint-label {
+  border-radius: var(--r-sm);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 500;
+  padding: 6px 3px;
+  text-align: center;
+  border: 1.5px solid;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  line-height: 1.5;
+  writing-mode: initial;
+}
+
+.usm-sprint-label[data-sprint="1"] { background: var(--s1-bg); color: var(--s1-txt); border-color: var(--s1-border); }
+.usm-sprint-label[data-sprint="2"] { background: var(--s2-bg); color: var(--s2-txt); border-color: var(--s2-border); }
+.usm-sprint-label[data-sprint="3"] { background: var(--s3-bg); color: var(--s3-txt); border-color: var(--s3-border); }
+
+/* ── Tarjeta de historia ─────────────────────────────────────── */
+.usm-story-card {
+  background: var(--surface);
+  border-radius: var(--r-md);
+  padding: 8px 9px;
+  margin-bottom: 4px;
+  border: 1px solid var(--border);
+  border-left: 3px solid transparent;
+  position: relative;
+  cursor: default;
+  transition: transform 0.12s ease, box-shadow 0.12s ease;
+  animation: slideUp 0.25s ease both;
+}
+
+.usm-story-card:last-child { margin-bottom: 0; }
+
+.usm-story-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(0,0,0,0.08);
+}
+
+.usm-story-card[data-sprint="1"] { border-left-color: var(--s1-acc); }
+.usm-story-card[data-sprint="2"] { border-left-color: var(--s2-acc); }
+.usm-story-card[data-sprint="3"] { border-left-color: var(--s3-acc); }
+
+/* ID de la historia */
+.usm-hu-id {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 500;
+  color: var(--text-tertiary);
+  letter-spacing: 0.05em;
+  display: block;
+  margin-bottom: 3px;
+}
+
+/* Texto de la historia */
+.usm-story-text {
+  font-size: 10.5px;
+  line-height: 1.45;
+  color: var(--text-primary);
+  font-weight: 400;
+}
+
+/* ── Badge de rol ────────────────────────────────────────────── */
+.usm-role-badge {
+  display: inline-block;
+  font-size: 9px;
+  font-weight: 500;
+  padding: 1px 6px;
+  border-radius: 3px;
+  letter-spacing: 0.02em;
+  margin-bottom: 4px;
+}
+
+.usm-role-badge[data-role="comunitario"] { background: var(--rc-bg); color: var(--rc-txt); }
+.usm-role-badge[data-role="organizador"] { background: var(--ro-bg); color: var(--ro-txt); }
+.usm-role-badge[data-role="admingrupo"]  { background: var(--ra-bg); color: var(--ra-txt); }
+.usm-role-badge[data-role="sistema"]     { background: var(--rs-bg); color: var(--rs-txt); }
+
+/* ── Leyenda ─────────────────────────────────────────────────── */
+.usm-legend {
+  margin-top: 2rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--border);
+}
+
+.usm-legend-section {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.usm-legend-section:last-child { margin-bottom: 0; }
+
+.usm-legend-label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  width: 72px;
+  flex-shrink: 0;
+}
+
+.usm-legend-pill {
+  font-size: 10.5px;
+  font-weight: 500;
+  padding: 3px 11px;
+  border-radius: 20px;
+  border: 1.5px solid transparent;
+}
+
+/* Sprints en leyenda */
+.usm-legend-pill[data-sprint="1"] { background: var(--s1-bg); color: var(--s1-txt); border-color: var(--s1-border); }
+.usm-legend-pill[data-sprint="2"] { background: var(--s2-bg); color: var(--s2-txt); border-color: var(--s2-border); }
+.usm-legend-pill[data-sprint="3"] { background: var(--s3-bg); color: var(--s3-txt); border-color: var(--s3-border); }
+
+/* Roles en leyenda */
+.usm-legend-pill[data-role="comunitario"] { background: var(--rc-bg); color: var(--rc-txt); border-color: var(--rc-txt); }
+.usm-legend-pill[data-role="organizador"] { background: var(--ro-bg); color: var(--ro-txt); border-color: var(--ro-txt); }
+.usm-legend-pill[data-role="admingrupo"]  { background: var(--ra-bg); color: var(--ra-txt); border-color: var(--ra-txt); }
+.usm-legend-pill[data-role="sistema"]     { background: var(--rs-bg); color: var(--rs-txt); border-color: var(--rs-txt); }
+
+/* Épicas en leyenda */
+.usm-legend-epic {
+  font-size: 10.5px;
+  font-weight: 600;
+  padding: 3px 10px;
+  border-radius: var(--r-xs);
+  border: 1.5px solid transparent;
+}
+
+.usm-legend-epic[data-color="indigo"] { background: var(--indigo-e); color: var(--indigo-t); border-color: var(--indigo-m); }
+.usm-legend-epic[data-color="teal"]   { background: var(--teal-e);   color: var(--teal-t);   border-color: var(--teal-m);   }
+.usm-legend-epic[data-color="green"]  { background: var(--green-e);  color: var(--green-t);  border-color: var(--green-m);  }
+.usm-legend-epic[data-color="amber"]  { background: var(--amber-e);  color: var(--amber-t);  border-color: var(--amber-m);  }
+.usm-legend-epic[data-color="orange"] { background: var(--orange-e); color: var(--orange-t); border-color: var(--orange-m); }
+.usm-legend-epic[data-color="rose"]   { background: var(--rose-e);   color: var(--rose-t);   border-color: var(--rose-m);   }
+.usm-legend-epic[data-color="violet"] { background: var(--violet-e); color: var(--violet-t); border-color: var(--violet-m); }
+.usm-legend-epic[data-color="sky"]    { background: var(--sky-e);    color: var(--sky-t);    border-color: var(--sky-m);    }
+.usm-legend-epic[data-color="lime"]   { background: var(--lime-e);   color: var(--lime-t);   border-color: var(--lime-m);   }
+.usm-legend-epic[data-color="slate"]  { background: var(--slate-e);  color: var(--slate-t);  border-color: var(--slate-m);  }
+
+/* ── Animación ───────────────────────────────────────────────── */
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0);   }
+}
+
+/* ── Responsive ──────────────────────────────────────────────── */
+@media (max-width: 768px) {
+  body { padding: 1.25rem 1rem 2rem; }
+
+  .usm-title-block h1  { font-size: 1.35rem; }
+  .usm-header-inner    { flex-direction: column; }
+  .usm-sprint-chips    { gap: 5px; }
+
+  :root {
+    --col-w:   130px;
+    --label-w:  48px;
+    --gap:        4px;
+  }
+}
+
+@media (max-width: 480px) {
+  :root { --col-w: 118px; --label-w: 44px; }
+}
