@@ -1,0 +1,99 @@
+# Miscellaneous
+*.class
+*.log
+*.pyc
+*.swp
+.DS_Store
+.atom/
+.buildlog/
+.history
+.svn/
+.migrate/
+.idea/
+*.iml
+
+# VS Code
+.vscode/
+
+# Flutter/Dart/Pub
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+.pub-cache/
+.pub/
+build/
+
+# Generated files
+**/generated_plugin_registrant.dart
+
+# Flutter web
+lib/generated_plugin_registrant.dart
+
+# Android
+android/.gradle/
+android/captures/
+android/local.properties
+android/**/GeneratedPluginRegistrant.java
+android/key.properties
+
+# Android Studio
+android/.idea/
+android/*.iml
+
+# iOS
+ios/.symlinks/
+ios/Flutter/App.framework
+ios/Flutter/Flutter.framework
+ios/Flutter/Flutter.podspec
+ios/Pods/
+ios/.generated/
+ios/Runner/GeneratedPluginRegistrant.*
+
+# CocoaPods
+Podfile.lock
+
+# Xcode
+ios/Runner.xcworkspace/
+ios/Runner.xcodeproj/project.xcworkspace/
+ios/xcuserdata/
+ios/**/*.xcuserstate
+
+# macOS
+macos/Flutter/GeneratedPluginRegistrant.swift
+macos/Pods/
+macos/Flutter/ephemeral/
+
+# Linux
+linux/flutter/ephemeral/
+
+# Windows
+windows/flutter/ephemeral/
+
+# Fuchsia
+.fuchsia/
+
+# Coverage
+coverage/
+
+# Firebase
+firebase-debug.log
+firebase-debug.*.log
+firebase-crashlytics.log
+
+# Fastlane
+fastlane/report.xml
+fastlane/Preview.html
+fastlane/screenshots/**/*.png
+fastlane/test_output/
+
+# Secrets
+.env
+.env.*
+*.jks
+*.keystore
+google-services.json
+GoogleService-Info.plist
+
+# Cache
+.cache/
