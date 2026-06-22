@@ -5,10 +5,10 @@ UNparche es una aplicación móvil diseñada exclusivamente para la comunidad un
 ## Estructura de la documentación
 
 ### Visión general
-| Archivo | Contenido |
-|---|---|
+| Archivo                                                        | Contenido                                                     |
+| ----------------------------------------------------------------| ---------------------------------------------------------------|
 | [Descripción del proyecto](./overview/descripcion-proyecto.md) | Propósito, características principales y contexto del sistema |
-| [Actores del sistema](./overview/actores.md) | Usuario Comunitario, Organizador y Moderador |
+| [Actores del sistema](./overview/actores.md)                   | Usuario Comunitario, Organizador y Moderador                  |
 
 ### Requisitos
 | Archivo | Contenido |
@@ -33,11 +33,11 @@ UNparche es una aplicación móvil diseñada exclusivamente para la comunidad un
 | [Mapa de historias (sprints)](./user-stories/README.md) | Todos | Resumen por sprint |
 
 ### Dominio
-| Archivo | Contenido |
-|---|---|
-| [Conceptos del sistema](./domain/conceptos.md) | Glosario de términos clave |
-| [Entidades](./domain/entidades.md) | Modelo de datos: Usuario, Evento, Grupo, etc. |
-| [Reglas de negocio](./domain/reglas-negocio.md) | RN-01 a RN-22 |
+| Archivo                                         | Contenido                                     |
+| -------------------------------------------------| -----------------------------------------------|
+| [Conceptos del sistema](./domain/conceptos.md)  | Glosario de términos clave                    |
+| [Entidades](./domain/entidades.md)              | Modelo de datos: Usuario, Evento, Grupo, etc. |
+| [Reglas de negocio](./domain/reglas-negocio.md) | RN-01 a RN-22                                 |
 
 ---
 

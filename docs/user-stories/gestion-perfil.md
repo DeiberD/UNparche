@@ -1,4 +1,4 @@
-# Historias de Usuario — Gestión de Perfil
+# Historias de Usuario - Gestión de Perfil
 
 ## HU-01 · Registro con correo institucional
 
