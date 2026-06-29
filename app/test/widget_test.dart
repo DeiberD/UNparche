@@ -6,8 +6,10 @@ void main() {
   testWidgets('shows UNparche on the home screen', (WidgetTester tester) async {
     await tester.pumpWidget(const UNparcheApp());
 
-    expect(find.text('UNparche'), findsNWidgets(2));
-    expect(find.text('Iniciar sesion'), findsOneWidget);
-    expect(find.text('Registrarse'), findsOneWidget);
+    expect(find.text('UNparche'), findsOneWidget);
+    expect(find.text('Categoria'), findsOneWidget);
+    expect(find.text('Fecha'), findsOneWidget);
+    expect(find.text('Amigos'), findsNWidgets(2));
+    expect(find.text('Mapa'), findsOneWidget);
   });
 }
