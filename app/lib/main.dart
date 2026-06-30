@@ -79,6 +79,25 @@ class _UNALMapState extends State<UNALMap> {
   String? _statusMessage = 'Cargando mapa...';
   bool _hasError = false;
 
+  static final _campusBounds = CoordinateBounds(
+    // Approximate UNAL Bogota campus box. We can tighten it later with exact GIS data.
+    southwest: Point(coordinates: Position(-74.0985, 4.6255)),
+    northeast: Point(coordinates: Position(-74.0725, 4.6505)),
+    infiniteBounds: false,
+  );
+
+  Future<void> _applyCampusBounds(MapboxMap mapboxMap) {
+    return mapboxMap.setBounds(
+      CameraBoundsOptions(
+        bounds: _campusBounds,
+        minZoom: 14.0,
+        maxZoom: 25,
+        minPitch: 0,
+        maxPitch: 45,
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Stack(
@@ -90,6 +109,7 @@ class _UNALMapState extends State<UNALMap> {
             center: Point(coordinates: Position(-74.0840, 4.6382)),
             zoom: 15.6,
           ),
+          onMapCreated: _applyCampusBounds,
           onStyleLoadedListener: (_) {
             setState(() {
               _statusMessage = null;
