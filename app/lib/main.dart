@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart';
 
+import 'create_event_screen.dart';
+
 const _mapboxAccessToken = String.fromEnvironment('ACCESS_TOKEN');
 
 void main() {
@@ -42,6 +44,21 @@ class CampusMapScreen extends StatelessWidget {
   static const _ink = Color(0xFF263020);
   static const _accent = Color(0xFFEEDDF0);
 
+  Future<void> _openCreateEvent(BuildContext context) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final event = await Navigator.of(context).push<CreatedEventDraft>(
+      MaterialPageRoute(builder: (_) => const CreateEventScreen()),
+    );
+
+    if (event == null) {
+      return;
+    }
+
+    messenger.showSnackBar(
+      SnackBar(content: Text('Evento "${event.title}" listo para publicar.')),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -60,6 +77,18 @@ class CampusMapScreen extends StatelessWidget {
               right: 12,
               bottom: 12,
               child: BottomNavigationMock(),
+            ),
+            Positioned(
+              right: 18,
+              bottom: 104,
+              child: FloatingActionButton(
+                heroTag: 'createEvent',
+                tooltip: 'Crear evento',
+                backgroundColor: _ink,
+                foregroundColor: Colors.white,
+                onPressed: () => _openCreateEvent(context),
+                child: const Icon(Icons.add),
+              ),
             ),
           ],
         ),
