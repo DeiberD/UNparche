@@ -97,3 +97,6 @@ GoogleService-Info.plist
 
 # Cache
 .cache/
+# Gradle local cache
+.gradle/
+**/.gradle/
