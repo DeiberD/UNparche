@@ -100,3 +100,12 @@ GoogleService-Info.plist
 # Gradle local cache
 .gradle/
 **/.gradle/
+
+
+# Cloudflare Wrangler local state
+.wrangler/
+**/.wrangler/
+
+# Node dependencies
+node_modules/
+**/node_modules/
