@@ -482,6 +482,71 @@ export default {
 			});
 		}
 	
+		// GET asistencias de un evento y confirmados (/eventos/:id/asistencias)
+		const asistenciasEventoMatch = url.pathname.match(/^\/eventos\/(\d+)\/asistencias$/);
+
+		if (request.method === "GET" && asistenciasEventoMatch) {
+			const idEvento = Number(asistenciasEventoMatch[1]);
+
+			const evento = await env.unparche_db
+				.prepare(
+					`SELECT
+						id_evento,
+						titulo
+					FROM evento
+					WHERE id_evento = ?
+					AND fecha_eliminacion IS NULL`
+				)
+				.bind(idEvento)
+				.first();
+
+			if (!evento) {
+				return json({ ok: false, error: "Evento no encontrado." }, { status: 404 });
+			}
+
+			const resumen = await env.unparche_db
+				.prepare(
+					`SELECT
+						SUM(CASE WHEN estado = 'CONFIRMADA' THEN 1 ELSE 0 END) AS total_confirmadas,
+						SUM(CASE WHEN estado = 'CANCELADA' THEN 1 ELSE 0 END) AS total_canceladas,
+						COUNT(*) AS total_registros
+					FROM asistencia
+					WHERE id_evento = ?`
+				)
+				.bind(idEvento)
+				.first();
+
+			const asistencias = await env.unparche_db
+				.prepare(
+					`SELECT
+						a.id_asistencia,
+						a.id_usuario,
+						u.nombre || ' ' || u.apellido AS usuario_nombre,
+						u.correo_institucional,
+						a.id_evento,
+						a.estado,
+						a.notificaciones_activas,
+						a.fecha_confirmacion
+					FROM asistencia a
+					JOIN usuario u ON u.id_usuario = a.id_usuario
+					WHERE a.id_evento = ?
+					ORDER BY a.fecha_confirmacion DESC`
+				)
+				.bind(idEvento)
+				.all();
+
+			return json({
+				ok: true,
+				evento,
+				resumen: {
+					total_confirmadas: resumen?.total_confirmadas ?? 0,
+					total_canceladas: resumen?.total_canceladas ?? 0,
+					total_registros: resumen?.total_registros ?? 0,
+				},
+				asistencias: asistencias.results,
+			});
+		}
+
 
 		// GET eventos
 		if (request.method === "GET" && url.pathname === "/eventos") {
