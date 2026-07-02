@@ -141,6 +141,35 @@ export default {
 			return json({ ok: true, grupos: grupos.results });
 		}
 
+		const usuarioMatch = url.pathname.match(/^\/usuarios\/(\d+)$/);
+
+		if (request.method === "GET" && usuarioMatch) {
+			const idUsuario = Number(usuarioMatch[1]);
+
+			const usuario = await env.unparche_db
+				.prepare(
+					`SELECT
+						id_usuario,
+						correo_institucional,
+						nombre,
+						apellido,
+						carrera,
+						informacion_personal,
+						rol,
+						fecha_creacion
+					FROM usuario
+					WHERE id_usuario = ?`
+				)
+				.bind(idUsuario)
+				.first();
+
+			if (!usuario) {
+				return json({ ok: false, error: "Usuario no encontrado." }, { status: 404 });
+			}
+
+			return json({ ok: true, usuario });
+		}
+
 		if (request.method === "GET" && url.pathname === "/eventos") {
 			const eventos = await env.unparche_db
 				.prepare(
