@@ -3,8 +3,53 @@ import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart';
 
 import 'create_event_screen.dart';
 import 'event_api_client.dart';
+import 'view_events_screen.dart';
 
 const _mapboxAccessToken = String.fromEnvironment('ACCESS_TOKEN');
+
+enum _HomeTab { map, events }
+
+class EventFilters {
+  const EventFilters({this.date, this.eventTypeId, this.groupId});
+
+  final DateTime? date;
+  final int? eventTypeId;
+  final int? groupId;
+
+  bool get hasActiveFilters =>
+      date != null || eventTypeId != null || groupId != null;
+
+  EventFilters copyWith({
+    DateTime? date,
+    int? eventTypeId,
+    int? groupId,
+    bool clearDate = false,
+    bool clearEventType = false,
+    bool clearGroup = false,
+  }) {
+    return EventFilters(
+      date: clearDate ? null : date ?? this.date,
+      eventTypeId: clearEventType ? null : eventTypeId ?? this.eventTypeId,
+      groupId: clearGroup ? null : groupId ?? this.groupId,
+    );
+  }
+}
+
+String _eventTypeLabel(int? eventTypeId) {
+  return switch (eventTypeId) {
+    1 => 'Academico',
+    2 => 'Cultural',
+    3 => 'Deportivo',
+    4 => 'Social',
+    5 => 'Otro',
+    _ => 'Categoria',
+  };
+}
+
+String _shortDate(DateTime date) {
+  return '${date.day.toString().padLeft(2, '0')}/'
+      '${date.month.toString().padLeft(2, '0')}';
+}
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -51,7 +96,10 @@ class CampusMapScreen extends StatefulWidget {
 
 class _CampusMapScreenState extends State<CampusMapScreen> {
   final _eventApiClient = EventApiClient();
-  List<EventSummary> _visibleEvents = [];
+  List<EventSummary> _allEvents = [];
+  _HomeTab _selectedTab = _HomeTab.map;
+  EventFilters _filters = const EventFilters();
+  EventSummary? _focusedEvent;
   bool _isLoadingEvents = false;
   String? _eventsError;
 
@@ -73,17 +121,27 @@ class _CampusMapScreenState extends State<CampusMapScreen> {
 
     try {
       final events = await _eventApiClient.fetchEvents();
-      final now = DateTime.now();
+      final sortedEvents = [...events]
+        ..sort((a, b) {
+          final aStart = a.start;
+          final bStart = b.start;
+          if (aStart == null && bStart == null) {
+            return a.title.compareTo(b.title);
+          }
+          if (aStart == null) {
+            return 1;
+          }
+          if (bStart == null) {
+            return -1;
+          }
+          return aStart.compareTo(bStart);
+        });
 
       if (!mounted) {
         return;
       }
 
-      setState(() {
-        _visibleEvents = events
-            .where((event) => event.isVisibleByDefault(now))
-            .toList();
-      });
+      setState(() => _allEvents = sortedEvents);
     } on EventApiException catch (error) {
       if (!mounted) {
         return;
@@ -116,14 +174,25 @@ class _CampusMapScreenState extends State<CampusMapScreen> {
     final eventSummary = EventSummary(
       id: event.id,
       title: event.title,
+      description: event.description,
       start: event.start,
+      durationMinutes: event.durationMinutes,
+      end: event.end,
       latitude: event.latitude,
       longitude: event.longitude,
+      visibility: event.apiVisibility,
+      groupId: null,
       eventTypeId: event.eventTypeId,
+      status: 'PROGRAMADO',
     );
-    if (eventSummary.isVisibleByDefault(DateTime.now())) {
-      setState(() => _visibleEvents = [..._visibleEvents, eventSummary]);
-    }
+    setState(() {
+      _allEvents = [..._allEvents, eventSummary]
+        ..sort(
+          (a, b) =>
+              (a.start ?? DateTime(9999)).compareTo(b.start ?? DateTime(9999)),
+        );
+      _focusedEvent = eventSummary;
+    });
     _loadVisibleEvents();
 
     messenger.showSnackBar(
@@ -131,19 +200,152 @@ class _CampusMapScreenState extends State<CampusMapScreen> {
     );
   }
 
+  List<EventSummary> get _filteredEvents {
+    final now = DateTime.now();
+    return _allEvents.where((event) {
+      if (!event.isVisibleByDefault(now)) {
+        return false;
+      }
+
+      final date = _filters.date;
+      if (date != null) {
+        final start = event.start;
+        if (start == null || !DateUtils.isSameDay(start.toLocal(), date)) {
+          return false;
+        }
+      }
+
+      final eventTypeId = _filters.eventTypeId;
+      if (eventTypeId != null && event.eventTypeId != eventTypeId) {
+        return false;
+      }
+
+      final groupId = _filters.groupId;
+      if (groupId != null && event.groupId != groupId) {
+        return false;
+      }
+
+      return true;
+    }).toList();
+  }
+
+  List<int> get _availableGroupIds {
+    final groupIds =
+        _allEvents
+            .map((event) => event.groupId)
+            .whereType<int>()
+            .toSet()
+            .toList()
+          ..sort();
+    return groupIds;
+  }
+
+  Future<void> _pickDateFilter() async {
+    final now = DateTime.now();
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _filters.date ?? now,
+      firstDate: DateTime(now.year, now.month, now.day),
+      lastDate: now.add(const Duration(days: 7)),
+    );
+
+    if (picked != null) {
+      setState(() => _filters = _filters.copyWith(date: picked));
+    }
+  }
+
+  Future<void> _pickEventTypeFilter() async {
+    final selected = await showModalBottomSheet<int?>(
+      context: context,
+      backgroundColor: CampusMapScreen._background,
+      builder: (_) => const _EventTypeFilterSheet(),
+    );
+
+    if (!mounted) {
+      return;
+    }
+
+    setState(() {
+      _filters = selected == null
+          ? _filters.copyWith(clearEventType: true)
+          : _filters.copyWith(eventTypeId: selected);
+    });
+  }
+
+  Future<void> _pickGroupFilter() async {
+    final selected = await showModalBottomSheet<int?>(
+      context: context,
+      backgroundColor: CampusMapScreen._background,
+      builder: (_) => _GroupFilterSheet(groupIds: _availableGroupIds),
+    );
+
+    if (!mounted) {
+      return;
+    }
+
+    setState(() {
+      _filters = selected == null
+          ? _filters.copyWith(clearGroup: true)
+          : _filters.copyWith(groupId: selected);
+    });
+  }
+
+  void _clearFilters() {
+    setState(() => _filters = const EventFilters());
+  }
+
+  Future<void> _openEventDetails(EventSummary event) async {
+    final shouldOpenLocation = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(builder: (_) => EventDetailScreen(event: event)),
+    );
+
+    if (shouldOpenLocation == true && mounted) {
+      setState(() {
+        _selectedTab = _HomeTab.map;
+        _focusedEvent = event;
+      });
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    final filteredEvents = _filteredEvents;
+
     return Scaffold(
       body: SafeArea(
         child: Stack(
           children: [
             Positioned.fill(
-              child: _mapboxAccessToken.isEmpty
-                  ? const MissingMapboxTokenView()
-                  : UNALMap(events: _visibleEvents),
+              child: _selectedTab == _HomeTab.map
+                  ? _mapboxAccessToken.isEmpty
+                        ? const MissingMapboxTokenView()
+                        : UNALMap(
+                            events: filteredEvents,
+                            focusedEvent: _focusedEvent,
+                          )
+                  : EventsListView(
+                      events: filteredEvents,
+                      isLoading: _isLoadingEvents,
+                      errorMessage: _eventsError,
+                      onRefresh: _loadVisibleEvents,
+                      onEventTap: _openEventDetails,
+                    ),
             ),
             const Positioned(left: 16, right: 16, top: 14, child: MapHeader()),
-            const Positioned(left: 16, right: 16, top: 82, child: MapFilters()),
+            Positioned(
+              left: 16,
+              right: 16,
+              top: 82,
+              child: EventFiltersBar(
+                filters: _filters,
+                onDatePressed: _pickDateFilter,
+                onTypePressed: _pickEventTypeFilter,
+                onGroupPressed: _pickGroupFilter,
+                onClearPressed: _filters.hasActiveFilters
+                    ? _clearFilters
+                    : null,
+              ),
+            ),
             if (_isLoadingEvents || _eventsError != null)
               Positioned(
                 left: 18,
@@ -154,11 +356,14 @@ class _CampusMapScreenState extends State<CampusMapScreen> {
                   hasError: _eventsError != null,
                 ),
               ),
-            const Positioned(
+            Positioned(
               left: 12,
               right: 12,
               bottom: 12,
-              child: BottomNavigationMock(),
+              child: _BottomNavigationMock(
+                selectedTab: _selectedTab,
+                onTabSelected: (tab) => setState(() => _selectedTab = tab),
+              ),
             ),
             Positioned(
               right: 18,
@@ -172,18 +377,19 @@ class _CampusMapScreenState extends State<CampusMapScreen> {
                 child: const Icon(Icons.add),
               ),
             ),
-            Positioned(
-              right: 18,
-              bottom: 170,
-              child: FloatingActionButton.small(
-                heroTag: 'refreshEvents',
-                tooltip: 'Actualizar eventos',
-                backgroundColor: CampusMapScreen._surface,
-                foregroundColor: CampusMapScreen._ink,
-                onPressed: _loadVisibleEvents,
-                child: const Icon(Icons.refresh),
+            if (_selectedTab == _HomeTab.map)
+              Positioned(
+                right: 18,
+                bottom: 170,
+                child: FloatingActionButton.small(
+                  heroTag: 'refreshEvents',
+                  tooltip: 'Actualizar eventos',
+                  backgroundColor: CampusMapScreen._surface,
+                  foregroundColor: CampusMapScreen._ink,
+                  onPressed: _loadVisibleEvents,
+                  child: const Icon(Icons.refresh),
+                ),
               ),
-            ),
           ],
         ),
       ),
@@ -192,9 +398,10 @@ class _CampusMapScreenState extends State<CampusMapScreen> {
 }
 
 class UNALMap extends StatefulWidget {
-  const UNALMap({super.key, required this.events});
+  const UNALMap({super.key, required this.events, this.focusedEvent});
 
   final List<EventSummary> events;
+  final EventSummary? focusedEvent;
 
   @override
   State<UNALMap> createState() => _UNALMapState();
@@ -234,7 +441,8 @@ class _UNALMapState extends State<UNALMap> {
   void didUpdateWidget(covariant UNALMap oldWidget) {
     super.didUpdateWidget(oldWidget);
 
-    if (oldWidget.events != widget.events) {
+    if (oldWidget.events != widget.events ||
+        oldWidget.focusedEvent?.id != widget.focusedEvent?.id) {
       _syncEventMarkers();
     }
   }
@@ -264,7 +472,7 @@ class _UNALMapState extends State<UNALMap> {
       );
     }
 
-    final latest = widget.events.lastOrNull;
+    final latest = widget.focusedEvent ?? widget.events.lastOrNull;
     if (latest != null && latest.latitude != null && latest.longitude != null) {
       await _mapboxMap?.setCamera(
         CameraOptions(
@@ -483,50 +691,45 @@ class MapHeader extends StatelessWidget {
   }
 }
 
-class MapFilters extends StatelessWidget {
-  const MapFilters({super.key});
+class _EventTypeFilterSheet extends StatelessWidget {
+  const _EventTypeFilterSheet();
+
+  static const _types = [
+    (id: 1, label: 'Academico', icon: Icons.school_outlined),
+    (id: 2, label: 'Cultural', icon: Icons.palette_outlined),
+    (id: 3, label: 'Deportivo', icon: Icons.sports_soccer_outlined),
+    (id: 4, label: 'Social', icon: Icons.celebration_outlined),
+    (id: 5, label: 'Otro', icon: Icons.more_horiz),
+  ];
 
   @override
   Widget build(BuildContext context) {
-    return const Row(
-      children: [
-        FilterChipMock(icon: Icons.tune, label: 'Categoria'),
-        SizedBox(width: 8),
-        FilterChipMock(icon: Icons.calendar_today, label: 'Fecha'),
-        SizedBox(width: 8),
-        FilterChipMock(icon: Icons.group, label: 'Amigos'),
-      ],
-    );
-  }
-}
-
-class FilterChipMock extends StatelessWidget {
-  const FilterChipMock({super.key, required this.icon, required this.label});
-
-  final IconData icon;
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: Colors.white.withAlpha(238),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: CampusMapScreen._ink.withAlpha(24)),
-      ),
+    return SafeArea(
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
-        child: Row(
+        padding: const EdgeInsets.fromLTRB(18, 16, 18, 18),
+        child: Column(
           mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Icon(icon, size: 16, color: CampusMapScreen._ink),
-            const SizedBox(width: 6),
-            Text(
-              label,
-              style: const TextStyle(
+            const Text(
+              'Filtrar por categoria',
+              style: TextStyle(
                 color: CampusMapScreen._ink,
-                fontSize: 13,
-                fontWeight: FontWeight.w700,
+                fontSize: 18,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+            const SizedBox(height: 12),
+            _FilterSheetOption(
+              icon: Icons.clear,
+              label: 'Todas las categorias',
+              onTap: () => Navigator.of(context).pop(null),
+            ),
+            ..._types.map(
+              (type) => _FilterSheetOption(
+                icon: type.icon,
+                label: type.label,
+                onTap: () => Navigator.of(context).pop(type.id),
               ),
             ),
           ],
@@ -536,8 +739,214 @@ class FilterChipMock extends StatelessWidget {
   }
 }
 
-class BottomNavigationMock extends StatelessWidget {
-  const BottomNavigationMock({super.key});
+class _GroupFilterSheet extends StatelessWidget {
+  const _GroupFilterSheet({required this.groupIds});
+
+  final List<int> groupIds;
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(18, 16, 18, 18),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Filtrar por grupo',
+              style: TextStyle(
+                color: CampusMapScreen._ink,
+                fontSize: 18,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+            const SizedBox(height: 12),
+            _FilterSheetOption(
+              icon: Icons.clear,
+              label: 'Todos los grupos',
+              onTap: () => Navigator.of(context).pop(null),
+            ),
+            if (groupIds.isEmpty)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 12),
+                child: Text(
+                  'No hay grupos disponibles en los eventos actuales.',
+                  style: TextStyle(
+                    color: CampusMapScreen._ink,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              )
+            else
+              ...groupIds.map(
+                (groupId) => _FilterSheetOption(
+                  icon: Icons.groups_outlined,
+                  label: 'Grupo $groupId',
+                  onTap: () => Navigator.of(context).pop(groupId),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _FilterSheetOption extends StatelessWidget {
+  const _FilterSheetOption({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(
+      contentPadding: EdgeInsets.zero,
+      leading: Icon(icon, color: CampusMapScreen._ink),
+      title: Text(
+        label,
+        style: const TextStyle(
+          color: CampusMapScreen._ink,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+      onTap: onTap,
+    );
+  }
+}
+
+class EventFiltersBar extends StatelessWidget {
+  const EventFiltersBar({
+    super.key,
+    required this.filters,
+    required this.onDatePressed,
+    required this.onTypePressed,
+    required this.onGroupPressed,
+    required this.onClearPressed,
+  });
+
+  final EventFilters filters;
+  final VoidCallback onDatePressed;
+  final VoidCallback onTypePressed;
+  final VoidCallback onGroupPressed;
+  final VoidCallback? onClearPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Row(
+        children: [
+          FilterChipMock(
+            icon: Icons.tune,
+            label: filters.eventTypeId == null
+                ? 'Categoria'
+                : _eventTypeLabel(filters.eventTypeId),
+            selected: filters.eventTypeId != null,
+            onPressed: onTypePressed,
+          ),
+          const SizedBox(width: 8),
+          FilterChipMock(
+            icon: Icons.calendar_today,
+            label: filters.date == null ? 'Fecha' : _shortDate(filters.date!),
+            selected: filters.date != null,
+            onPressed: onDatePressed,
+          ),
+          const SizedBox(width: 8),
+          FilterChipMock(
+            icon: Icons.group,
+            label: filters.groupId == null
+                ? 'Grupo'
+                : 'Grupo ${filters.groupId}',
+            selected: filters.groupId != null,
+            onPressed: onGroupPressed,
+          ),
+          if (onClearPressed != null) ...[
+            const SizedBox(width: 8),
+            FilterChipMock(
+              icon: Icons.close,
+              label: 'Limpiar',
+              selected: true,
+              onPressed: onClearPressed!,
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class FilterChipMock extends StatelessWidget {
+  const FilterChipMock({
+    super.key,
+    required this.icon,
+    required this.label,
+    this.selected = false,
+    required this.onPressed,
+  });
+
+  final IconData icon;
+  final String label;
+  final bool selected;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: selected ? CampusMapScreen._ink : Colors.white.withAlpha(238),
+      borderRadius: BorderRadius.circular(20),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(20),
+        onTap: onPressed,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(
+              color: selected
+                  ? CampusMapScreen._ink
+                  : CampusMapScreen._ink.withAlpha(24),
+            ),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                icon,
+                size: 16,
+                color: selected ? Colors.white : CampusMapScreen._ink,
+              ),
+              const SizedBox(width: 6),
+              Text(
+                label,
+                style: TextStyle(
+                  color: selected ? Colors.white : CampusMapScreen._ink,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _BottomNavigationMock extends StatelessWidget {
+  const _BottomNavigationMock({
+    required this.selectedTab,
+    required this.onTabSelected,
+  });
+
+  final _HomeTab selectedTab;
+  final ValueChanged<_HomeTab> onTabSelected;
 
   @override
   Widget build(BuildContext context) {
@@ -554,17 +963,31 @@ class BottomNavigationMock extends StatelessWidget {
           ),
         ],
       ),
-      child: const Row(
+      child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceAround,
         children: [
           BottomNavItem(
             icon: Icons.map_outlined,
             label: 'Mapa',
-            selected: true,
+            selected: selectedTab == _HomeTab.map,
+            onPressed: () => onTabSelected(_HomeTab.map),
           ),
-          BottomNavItem(icon: Icons.event_outlined, label: 'Eventos'),
-          BottomNavItem(icon: Icons.groups_outlined, label: 'Grupos'),
-          BottomNavItem(icon: Icons.person_outline, label: 'Amigos'),
+          BottomNavItem(
+            icon: Icons.event_outlined,
+            label: 'Eventos',
+            selected: selectedTab == _HomeTab.events,
+            onPressed: () => onTabSelected(_HomeTab.events),
+          ),
+          BottomNavItem(
+            icon: Icons.groups_outlined,
+            label: 'Grupos',
+            onPressed: () {},
+          ),
+          BottomNavItem(
+            icon: Icons.person_outline,
+            label: 'Amigos',
+            onPressed: () {},
+          ),
         ],
       ),
     );
@@ -576,11 +999,13 @@ class BottomNavItem extends StatelessWidget {
     super.key,
     required this.icon,
     required this.label,
+    required this.onPressed,
     this.selected = false,
   });
 
   final IconData icon;
   final String label;
+  final VoidCallback onPressed;
   final bool selected;
 
   @override
@@ -589,27 +1014,31 @@ class BottomNavItem extends StatelessWidget {
         ? CampusMapScreen._ink
         : CampusMapScreen._ink.withAlpha(170);
 
-    return Container(
-      width: 72,
-      padding: const EdgeInsets.symmetric(vertical: 7),
-      decoration: BoxDecoration(
-        color: selected ? CampusMapScreen._accent : Colors.transparent,
-        borderRadius: BorderRadius.circular(18),
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, color: color, size: 21),
-          const SizedBox(height: 2),
-          Text(
-            label,
-            style: TextStyle(
-              color: color,
-              fontSize: 11,
-              fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
+    return InkWell(
+      borderRadius: BorderRadius.circular(18),
+      onTap: onPressed,
+      child: Container(
+        width: 72,
+        padding: const EdgeInsets.symmetric(vertical: 7),
+        decoration: BoxDecoration(
+          color: selected ? CampusMapScreen._accent : Colors.transparent,
+          borderRadius: BorderRadius.circular(18),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, color: color, size: 21),
+            const SizedBox(height: 2),
+            Text(
+              label,
+              style: TextStyle(
+                color: color,
+                fontSize: 11,
+                fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

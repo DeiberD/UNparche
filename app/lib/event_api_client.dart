@@ -82,33 +82,62 @@ class EventSummary {
   const EventSummary({
     required this.id,
     required this.title,
+    required this.description,
     required this.start,
+    required this.durationMinutes,
+    required this.end,
     required this.latitude,
     required this.longitude,
+    required this.visibility,
+    required this.groupId,
     required this.eventTypeId,
+    required this.status,
   });
 
   factory EventSummary.fromJson(Map<String, dynamic> json) {
     return EventSummary(
-      id: json['id_evento'] is int ? json['id_evento'] as int : null,
+      id: _toInt(json['id_evento']),
       title: json['titulo']?.toString() ?? 'Evento',
+      description: json['descripcion']?.toString() ?? '',
       start: _toDateTime(json['fecha_inicio']),
+      durationMinutes: _toInt(json['duracion_minutos']),
+      end: _toDateTime(json['fecha_fin']),
       latitude: _toDouble(json['latitud']),
       longitude: _toDouble(json['longitud']),
-      eventTypeId: json['id_tipo_evento'] is int
-          ? json['id_tipo_evento'] as int
-          : null,
+      visibility: json['visibilidad']?.toString() ?? 'PUBLICA',
+      groupId: _toInt(json['id_grupo']),
+      eventTypeId: _toInt(json['id_tipo_evento']),
+      status: json['estado']?.toString() ?? 'PROGRAMADO',
     );
   }
 
   final int? id;
   final String title;
+  final String description;
   final DateTime? start;
+  final int? durationMinutes;
+  final DateTime? end;
   final double? latitude;
   final double? longitude;
+  final String visibility;
+  final int? groupId;
   final int? eventTypeId;
+  final String status;
 
   bool get hasLocation => latitude != null && longitude != null;
+  bool get isPublic => visibility == 'PUBLICA';
+  bool get isActive => status == 'PROGRAMADO' || status == 'EN_CURSO';
+
+  String get eventTypeLabel {
+    return switch (eventTypeId) {
+      1 => 'Academico',
+      2 => 'Cultural',
+      3 => 'Deportivo',
+      4 => 'Social',
+      5 => 'Otro',
+      _ => 'Evento',
+    };
+  }
 
   bool isVisibleByDefault(DateTime now) {
     final eventStart = start;
@@ -117,9 +146,24 @@ class EventSummary {
     }
 
     final todayStart = DateTime(now.year, now.month, now.day);
-    final next24Hours = now.add(const Duration(hours: 24));
+    final next7Days = now.add(const Duration(days: 7));
 
-    return !eventStart.isBefore(todayStart) && !eventStart.isAfter(next24Hours);
+    return isPublic &&
+        isActive &&
+        !eventStart.isBefore(todayStart) &&
+        !eventStart.isAfter(next7Days);
+  }
+
+  static int? _toInt(Object? value) {
+    if (value is int) {
+      return value;
+    }
+
+    if (value is double && value % 1 == 0) {
+      return value.toInt();
+    }
+
+    return null;
   }
 
   static double? _toDouble(Object? value) {

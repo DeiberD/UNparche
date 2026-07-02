@@ -485,6 +485,15 @@ class CreatedEventDraft {
   final String type;
   final String visibility;
   final bool chatEnabled;
+
+  String get apiVisibility {
+    return switch (visibility) {
+      'Publica' => 'PUBLICA',
+      'Solo grupo' => 'SOLO_GRUPO',
+      'Solo amigos' => 'SOLO_AMIGOS',
+      _ => 'PUBLICA',
+    };
+  }
 }
 
 class _CoverPhotoPlaceholder extends StatelessWidget {
