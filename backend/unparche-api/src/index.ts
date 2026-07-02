@@ -179,6 +179,103 @@ export default {
 			return json({ ok: true, usuario });
 		}
 		
+		// GET eventos relacionados con un usuario (usuarios/:id/eventos)
+		const eventosUsuarioMatch = url.pathname.match(/^\/usuarios\/(\d+)\/eventos$/);
+
+		if (request.method === "GET" && eventosUsuarioMatch) {
+			const idUsuario = Number(eventosUsuarioMatch[1]);
+
+			const usuario = await env.unparche_db
+				.prepare(
+					`SELECT
+						id_usuario
+					FROM usuario
+					WHERE id_usuario = ?`
+				)
+				.bind(idUsuario)
+				.first();
+
+			if (!usuario) {
+				return json({ ok: false, error: "Usuario no encontrado." }, { status: 404 });
+			}
+
+			const eventosOrganizados = await env.unparche_db
+				.prepare(
+					`SELECT
+						e.id_evento,
+						e.titulo,
+						e.descripcion,
+						e.fecha_inicio,
+						e.duracion_minutos,
+						e.fecha_fin,
+						e.fecha_publicacion,
+						e.latitud,
+						e.longitud,
+						e.visibilidad,
+						e.chat_habilitado,
+						e.estado,
+						e.id_organizador,
+						e.id_grupo,
+						g.nombre AS grupo_nombre,
+						e.id_tipo_evento,
+						t.nombre AS tipo_evento_nombre,
+						t.icono_svg AS tipo_evento_icono
+					FROM evento e
+					JOIN tipo_evento t ON t.id_tipo_evento = e.id_tipo_evento
+					LEFT JOIN grupo g ON g.id_grupo = e.id_grupo
+					WHERE e.id_organizador = ?
+					AND e.fecha_eliminacion IS NULL
+					ORDER BY e.fecha_inicio DESC`
+				)
+				.bind(idUsuario)
+				.all();
+
+			const eventosAsistencia = await env.unparche_db
+				.prepare(
+					`SELECT
+						e.id_evento,
+						e.titulo,
+						e.descripcion,
+						e.fecha_inicio,
+						e.duracion_minutos,
+						e.fecha_fin,
+						e.fecha_publicacion,
+						e.latitud,
+						e.longitud,
+						e.visibilidad,
+						e.chat_habilitado,
+						e.estado,
+						e.id_organizador,
+						u.nombre || ' ' || u.apellido AS organizador_nombre,
+						e.id_grupo,
+						g.nombre AS grupo_nombre,
+						e.id_tipo_evento,
+						t.nombre AS tipo_evento_nombre,
+						t.icono_svg AS tipo_evento_icono,
+						a.estado AS estado_asistencia,
+						a.fecha_confirmacion
+					FROM asistencia a
+					JOIN evento e ON e.id_evento = a.id_evento
+					JOIN usuario u ON u.id_usuario = e.id_organizador
+					JOIN tipo_evento t ON t.id_tipo_evento = e.id_tipo_evento
+					LEFT JOIN grupo g ON g.id_grupo = e.id_grupo
+					WHERE a.id_usuario = ?
+					AND a.estado = 'CONFIRMADA'
+					AND e.fecha_eliminacion IS NULL
+					ORDER BY e.fecha_inicio DESC`
+				)
+				.bind(idUsuario)
+				.all();
+
+			return json({
+				ok: true,
+				id_usuario: idUsuario,
+				eventos_organizados: eventosOrganizados.results,
+				eventos_asistencia: eventosAsistencia.results,
+			});
+		}
+
+
 		// GET eventos/id
 		const eventoMatch = url.pathname.match(/^\/eventos\/(\d+)$/);
 
