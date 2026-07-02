@@ -121,6 +121,26 @@ export default {
 			return json({ ok: true, tipos_evento: tiposEvento.results });
 		}
 
+		if (request.method === "GET" && url.pathname === "/grupos") {
+			const grupos = await env.unparche_db
+				.prepare(
+					`SELECT
+						id_grupo,
+						nombre,
+						descripcion,
+						categoria,
+						es_oficial,
+						estado_verificacion,
+						fecha_creacion,
+						id_administrador
+					FROM grupo
+					ORDER BY fecha_creacion DESC`
+				)
+				.all();
+
+			return json({ ok: true, grupos: grupos.results });
+		}
+
 		if (request.method === "GET" && url.pathname === "/eventos") {
 			const eventos = await env.unparche_db
 				.prepare(
