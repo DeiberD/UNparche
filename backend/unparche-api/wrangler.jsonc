@@ -18,7 +18,7 @@
 		{
 			"binding": "unparche_db",
 			"database_name": "unparche-db",
-			"database_id": "0e031493-a2e7-4278-8a44-f832f07e0f1c",
+			"database_id": "e44ff154-f228-4954-be86-ee4247eb88e6",
 			"migrations_dir": "../../database/d1/migrations"
 		}
 	]

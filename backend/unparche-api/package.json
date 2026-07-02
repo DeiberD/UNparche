@@ -5,6 +5,7 @@
   "scripts": {
     "deploy": "wrangler deploy",
     "dev": "wrangler dev",
+    "dev:lan": "wrangler dev --ip 0.0.0.0 --port 8787",
     "start": "wrangler dev",
     "test": "vitest",
     "cf-typegen": "wrangler types"

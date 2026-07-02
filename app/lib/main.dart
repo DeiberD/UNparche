@@ -55,7 +55,7 @@ class CampusMapScreen extends StatelessWidget {
     }
 
     messenger.showSnackBar(
-      SnackBar(content: Text('Evento "${event.title}" listo para publicar.')),
+      SnackBar(content: Text('Evento "${event.title}" publicado.')),
     );
   }
 
