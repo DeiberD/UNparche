@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart';
 
 import 'create_event_screen.dart';
+import 'event_api_client.dart';
 
 const _mapboxAccessToken = String.fromEnvironment('ACCESS_TOKEN');
 
@@ -36,13 +37,71 @@ class UNparcheApp extends StatelessWidget {
   }
 }
 
-class CampusMapScreen extends StatelessWidget {
+class CampusMapScreen extends StatefulWidget {
   const CampusMapScreen({super.key});
 
   static const _background = Color(0xFFFBF5F2);
   static const _surface = Color(0xFFF3ECE8);
   static const _ink = Color(0xFF263020);
   static const _accent = Color(0xFFEEDDF0);
+
+  @override
+  State<CampusMapScreen> createState() => _CampusMapScreenState();
+}
+
+class _CampusMapScreenState extends State<CampusMapScreen> {
+  final _eventApiClient = EventApiClient();
+  List<EventSummary> _visibleEvents = [];
+  bool _isLoadingEvents = false;
+  String? _eventsError;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadVisibleEvents();
+  }
+
+  Future<void> _loadVisibleEvents() async {
+    if (_isLoadingEvents) {
+      return;
+    }
+
+    setState(() {
+      _isLoadingEvents = true;
+      _eventsError = null;
+    });
+
+    try {
+      final events = await _eventApiClient.fetchEvents();
+      final now = DateTime.now();
+
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        _visibleEvents = events
+            .where((event) => event.isVisibleByDefault(now))
+            .toList();
+      });
+    } on EventApiException catch (error) {
+      if (!mounted) {
+        return;
+      }
+
+      setState(() => _eventsError = error.message);
+    } catch (_) {
+      if (!mounted) {
+        return;
+      }
+
+      setState(() => _eventsError = 'No se pudieron cargar los eventos.');
+    } finally {
+      if (mounted) {
+        setState(() => _isLoadingEvents = false);
+      }
+    }
+  }
 
   Future<void> _openCreateEvent(BuildContext context) async {
     final messenger = ScaffoldMessenger.of(context);
@@ -53,6 +112,19 @@ class CampusMapScreen extends StatelessWidget {
     if (event == null) {
       return;
     }
+
+    final eventSummary = EventSummary(
+      id: event.id,
+      title: event.title,
+      start: event.start,
+      latitude: event.latitude,
+      longitude: event.longitude,
+      eventTypeId: event.eventTypeId,
+    );
+    if (eventSummary.isVisibleByDefault(DateTime.now())) {
+      setState(() => _visibleEvents = [..._visibleEvents, eventSummary]);
+    }
+    _loadVisibleEvents();
 
     messenger.showSnackBar(
       SnackBar(content: Text('Evento "${event.title}" publicado.')),
@@ -68,10 +140,20 @@ class CampusMapScreen extends StatelessWidget {
             Positioned.fill(
               child: _mapboxAccessToken.isEmpty
                   ? const MissingMapboxTokenView()
-                  : const UNALMap(),
+                  : UNALMap(events: _visibleEvents),
             ),
             const Positioned(left: 16, right: 16, top: 14, child: MapHeader()),
             const Positioned(left: 16, right: 16, top: 82, child: MapFilters()),
+            if (_isLoadingEvents || _eventsError != null)
+              Positioned(
+                left: 18,
+                right: 18,
+                top: 134,
+                child: MapStatusMessage(
+                  message: _eventsError ?? 'Cargando eventos...',
+                  hasError: _eventsError != null,
+                ),
+              ),
             const Positioned(
               left: 12,
               right: 12,
@@ -84,10 +166,22 @@ class CampusMapScreen extends StatelessWidget {
               child: FloatingActionButton(
                 heroTag: 'createEvent',
                 tooltip: 'Crear evento',
-                backgroundColor: _ink,
+                backgroundColor: CampusMapScreen._ink,
                 foregroundColor: Colors.white,
                 onPressed: () => _openCreateEvent(context),
                 child: const Icon(Icons.add),
+              ),
+            ),
+            Positioned(
+              right: 18,
+              bottom: 170,
+              child: FloatingActionButton.small(
+                heroTag: 'refreshEvents',
+                tooltip: 'Actualizar eventos',
+                backgroundColor: CampusMapScreen._surface,
+                foregroundColor: CampusMapScreen._ink,
+                onPressed: _loadVisibleEvents,
+                child: const Icon(Icons.refresh),
               ),
             ),
           ],
@@ -98,13 +192,17 @@ class CampusMapScreen extends StatelessWidget {
 }
 
 class UNALMap extends StatefulWidget {
-  const UNALMap({super.key});
+  const UNALMap({super.key, required this.events});
+
+  final List<EventSummary> events;
 
   @override
   State<UNALMap> createState() => _UNALMapState();
 }
 
 class _UNALMapState extends State<UNALMap> {
+  MapboxMap? _mapboxMap;
+  CircleAnnotationManager? _eventMarkerManager;
   String? _statusMessage = 'Cargando mapa...';
   bool _hasError = false;
 
@@ -115,8 +213,9 @@ class _UNALMapState extends State<UNALMap> {
     infiniteBounds: false,
   );
 
-  Future<void> _applyCampusBounds(MapboxMap mapboxMap) {
-    return mapboxMap.setBounds(
+  Future<void> _onMapCreated(MapboxMap mapboxMap) async {
+    _mapboxMap = mapboxMap;
+    await mapboxMap.setBounds(
       CameraBoundsOptions(
         bounds: _campusBounds,
         minZoom: 14.0,
@@ -125,6 +224,68 @@ class _UNALMapState extends State<UNALMap> {
         maxPitch: 45,
       ),
     );
+
+    _eventMarkerManager = await mapboxMap.annotations
+        .createCircleAnnotationManager();
+    await _syncEventMarkers();
+  }
+
+  @override
+  void didUpdateWidget(covariant UNALMap oldWidget) {
+    super.didUpdateWidget(oldWidget);
+
+    if (oldWidget.events != widget.events) {
+      _syncEventMarkers();
+    }
+  }
+
+  Future<void> _syncEventMarkers() async {
+    final manager = _eventMarkerManager;
+    if (manager == null) {
+      return;
+    }
+
+    await manager.deleteAll();
+    for (final event in widget.events) {
+      final latitude = event.latitude;
+      final longitude = event.longitude;
+      if (latitude == null || longitude == null) {
+        continue;
+      }
+
+      await manager.create(
+        CircleAnnotationOptions(
+          geometry: Point(coordinates: Position(longitude, latitude)),
+          circleRadius: 8,
+          circleColor: _eventColor(event.eventTypeId).toARGB32(),
+          circleStrokeColor: Colors.white.toARGB32(),
+          circleStrokeWidth: 3,
+        ),
+      );
+    }
+
+    final latest = widget.events.lastOrNull;
+    if (latest != null && latest.latitude != null && latest.longitude != null) {
+      await _mapboxMap?.setCamera(
+        CameraOptions(
+          center: Point(
+            coordinates: Position(latest.longitude!, latest.latitude!),
+          ),
+          zoom: 16.5,
+        ),
+      );
+    }
+  }
+
+  Color _eventColor(int? eventTypeId) {
+    return switch (eventTypeId) {
+      1 => const Color(0xFF4267B2),
+      2 => const Color(0xFF8B4C9D),
+      3 => const Color(0xFF2E7D32),
+      4 => const Color(0xFFC2410C),
+      5 => CampusMapScreen._ink,
+      _ => CampusMapScreen._ink,
+    };
   }
 
   @override
@@ -138,7 +299,7 @@ class _UNALMapState extends State<UNALMap> {
             center: Point(coordinates: Position(-74.0840, 4.6382)),
             zoom: 15.6,
           ),
-          onMapCreated: _applyCampusBounds,
+          onMapCreated: _onMapCreated,
           onStyleLoadedListener: (_) {
             setState(() {
               _statusMessage = null;
