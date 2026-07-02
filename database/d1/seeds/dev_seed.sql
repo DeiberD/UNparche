@@ -22,7 +22,9 @@ INSERT INTO grupo (
     estado_verificacion,
     id_administrador
 ) VALUES
-    (1, 'Ajedrez UN', 'Grupo para jugar ajedrez en la universidad', 'SOCIAL', 0, 'NO_SOLICITADO', 1);
+    (1, 'Ajedrez UN', 'Grupo para jugar ajedrez en la universidad', 'SOCIAL', 0, 'NO_SOLICITADO', 1),
+    (2, 'Bienestar Universitario', 'Actividades oficiales de bienestar para la comunidad UNAL', 'CULTURAL', 1, 'APROBADO', 1),
+    (3, 'Running UN', 'Entrenamientos y trotes dentro del campus', 'DEPORTIVO', 0, 'NO_SOLICITADO', 2);
 
 INSERT INTO membresia_grupo (
     id_membresia,
@@ -32,7 +34,18 @@ INSERT INTO membresia_grupo (
     id_grupo
 ) VALUES
     (1, 'ADMINISTRADOR', 'ACTIVA', 1, 1),
-    (2, 'MIEMBRO', 'ACTIVA', 2, 1);
+    (2, 'MIEMBRO', 'ACTIVA', 2, 1),
+    (3, 'ADMINISTRADOR', 'ACTIVA', 1, 2),
+    (4, 'ADMINISTRADOR', 'ACTIVA', 2, 3);
+
+INSERT INTO invitacion_grupo (
+    id_invitacion_grupo,
+    estado,
+    id_grupo,
+    id_invitado,
+    id_invitador
+) VALUES
+    (1, 'PENDIENTE', 3, 1, 2);
 
 INSERT INTO evento (
     id_evento,

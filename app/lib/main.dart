@@ -4,10 +4,11 @@ import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart';
 import 'create_event_screen.dart';
 import 'event_api_client.dart';
 import 'view_events_screen.dart';
+import 'view_groups_screen.dart';
 
 const _mapboxAccessToken = String.fromEnvironment('ACCESS_TOKEN');
 
-enum _HomeTab { map, events }
+enum _HomeTab { map, events, groups }
 
 class EventFilters {
   const EventFilters({this.date, this.eventTypeId, this.groupId});
@@ -310,43 +311,48 @@ class _CampusMapScreenState extends State<CampusMapScreen> {
   @override
   Widget build(BuildContext context) {
     final filteredEvents = _filteredEvents;
+    final showEventControls = _selectedTab != _HomeTab.groups;
 
     return Scaffold(
       body: SafeArea(
         child: Stack(
           children: [
             Positioned.fill(
-              child: _selectedTab == _HomeTab.map
-                  ? _mapboxAccessToken.isEmpty
-                        ? const MissingMapboxTokenView()
-                        : UNALMap(
-                            events: filteredEvents,
-                            focusedEvent: _focusedEvent,
-                          )
-                  : EventsListView(
-                      events: filteredEvents,
-                      isLoading: _isLoadingEvents,
-                      errorMessage: _eventsError,
-                      onRefresh: _loadVisibleEvents,
-                      onEventTap: _openEventDetails,
-                    ),
+              child: switch (_selectedTab) {
+                _HomeTab.map =>
+                  _mapboxAccessToken.isEmpty
+                      ? const MissingMapboxTokenView()
+                      : UNALMap(
+                          events: filteredEvents,
+                          focusedEvent: _focusedEvent,
+                        ),
+                _HomeTab.events => EventsListView(
+                  events: filteredEvents,
+                  isLoading: _isLoadingEvents,
+                  errorMessage: _eventsError,
+                  onRefresh: _loadVisibleEvents,
+                  onEventTap: _openEventDetails,
+                ),
+                _HomeTab.groups => const GroupsScreen(),
+              },
             ),
             const Positioned(left: 16, right: 16, top: 14, child: MapHeader()),
-            Positioned(
-              left: 16,
-              right: 16,
-              top: 82,
-              child: EventFiltersBar(
-                filters: _filters,
-                onDatePressed: _pickDateFilter,
-                onTypePressed: _pickEventTypeFilter,
-                onGroupPressed: _pickGroupFilter,
-                onClearPressed: _filters.hasActiveFilters
-                    ? _clearFilters
-                    : null,
+            if (showEventControls)
+              Positioned(
+                left: 16,
+                right: 16,
+                top: 82,
+                child: EventFiltersBar(
+                  filters: _filters,
+                  onDatePressed: _pickDateFilter,
+                  onTypePressed: _pickEventTypeFilter,
+                  onGroupPressed: _pickGroupFilter,
+                  onClearPressed: _filters.hasActiveFilters
+                      ? _clearFilters
+                      : null,
+                ),
               ),
-            ),
-            if (_isLoadingEvents || _eventsError != null)
+            if (showEventControls && (_isLoadingEvents || _eventsError != null))
               Positioned(
                 left: 18,
                 right: 18,
@@ -365,18 +371,19 @@ class _CampusMapScreenState extends State<CampusMapScreen> {
                 onTabSelected: (tab) => setState(() => _selectedTab = tab),
               ),
             ),
-            Positioned(
-              right: 18,
-              bottom: 104,
-              child: FloatingActionButton(
-                heroTag: 'createEvent',
-                tooltip: 'Crear evento',
-                backgroundColor: CampusMapScreen._ink,
-                foregroundColor: Colors.white,
-                onPressed: () => _openCreateEvent(context),
-                child: const Icon(Icons.add),
+            if (showEventControls)
+              Positioned(
+                right: 18,
+                bottom: 104,
+                child: FloatingActionButton(
+                  heroTag: 'createEvent',
+                  tooltip: 'Crear evento',
+                  backgroundColor: CampusMapScreen._ink,
+                  foregroundColor: Colors.white,
+                  onPressed: () => _openCreateEvent(context),
+                  child: const Icon(Icons.add),
+                ),
               ),
-            ),
             if (_selectedTab == _HomeTab.map)
               Positioned(
                 right: 18,
@@ -981,7 +988,8 @@ class _BottomNavigationMock extends StatelessWidget {
           BottomNavItem(
             icon: Icons.groups_outlined,
             label: 'Grupos',
-            onPressed: () {},
+            selected: selectedTab == _HomeTab.groups,
+            onPressed: () => onTabSelected(_HomeTab.groups),
           ),
           BottomNavItem(
             icon: Icons.person_outline,
