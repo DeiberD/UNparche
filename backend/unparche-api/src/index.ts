@@ -18,8 +18,8 @@ type CrearEventoBody = {
 
 const corsHeaders = {
 	"Access-Control-Allow-Origin": "*",
-	"Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-	"Access-Control-Allow-Headers": "Content-Type",
+	"Access-Control-Allow-Methods": "GET, POST, PATCH, DELETE, OPTIONS",
+	"Access-Control-Allow-Headers": "Content-Type, Authorization",
 };
 
 const json = (body: unknown, init: ResponseInit = {}) =>
@@ -106,6 +106,21 @@ export default {
 			return json({ ok: true, message: "UNparche API" });
 		}
 
+		if (request.method === "GET" && url.pathname === "/tipos-evento") {
+			const tiposEvento = await env.unparche_db
+				.prepare(
+					`SELECT
+						id_tipo_evento,
+						nombre,
+						icono_svg
+					FROM tipo_evento
+					ORDER BY id_tipo_evento ASC`
+				)
+				.all();
+
+			return json({ ok: true, tipos_evento: tiposEvento.results });
+		}
+
 		if (request.method === "GET" && url.pathname === "/eventos") {
 			const eventos = await env.unparche_db
 				.prepare(
@@ -185,6 +200,14 @@ export default {
 				return json({ ok: false, error: "visibilidad debe ser PUBLICA, SOLO_GRUPO o SOLO_AMIGOS." }, { status: 400 });
 			}
 
+			if (latitud < -90 || latitud > 90) {
+				return json({ ok: false, error: "latitud debe estar entre -90 y 90." }, { status: 400 });
+			}
+
+			if (longitud < -180 || longitud > 180) {
+				return json({ ok: false, error: "longitud debe estar entre -180 y 180." }, { status: 400 });
+			}
+
 			try {
 				const result = await env.unparche_db
 					.prepare(
@@ -233,11 +256,27 @@ export default {
 			} catch (error) {
 				const message = error instanceof Error ? error.message : String(error);
 
-				if (message.toLowerCase().includes("foreign key constraint failed")) {
+				const lowerMessage = message.toLowerCase();
+
+				if (lowerMessage.includes("foreign key constraint failed")) {
 					return json(
 						{
 							ok: false,
 							error: "id_organizador, id_tipo_evento o id_grupo no existe.",
+						},
+						{ status: 400 }
+					);
+				}
+
+				if (
+					lowerMessage.includes("check constraint failed") ||
+					lowerMessage.includes("not null constraint failed") ||
+					lowerMessage.includes("unique constraint failed")
+				) {
+					return json(
+						{
+							ok: false,
+							error: "Los datos enviados no cumplen las restricciones de la base de datos.",
 						},
 						{ status: 400 }
 					);
@@ -249,7 +288,7 @@ export default {
 						error: "No se pudo crear el evento.",
 					},
 					{ status: 500 }
-				)
+				);
 			}
 		}
 
