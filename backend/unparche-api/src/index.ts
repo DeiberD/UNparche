@@ -16,6 +16,11 @@ type CrearEventoBody = {
 	chat_habilitado?: boolean;
 };
 
+type CrearAsistenciaBody = {
+	id_usuario?: number;
+	estado?: "CONFIRMADA" | "CANCELADA";
+};
+
 const corsHeaders = {
 	"Access-Control-Allow-Origin": "*",
 	"Access-Control-Allow-Methods": "GET, POST, PATCH, DELETE, OPTIONS",
@@ -212,6 +217,104 @@ export default {
 			}
 
 			return json({ ok: true, evento });
+		}
+
+		const asistenciaEventoMatch = url.pathname.match(/^\/eventos\/(\d+)\/asistencias$/);
+
+		if (request.method === "POST" && asistenciaEventoMatch) {
+			const idEvento = Number(asistenciaEventoMatch[1]);
+
+			let body: CrearAsistenciaBody;
+
+			try {
+				body = await request.json();
+			} catch {
+				return json({ ok: false, error: "El body debe ser JSON valido." }, { status: 400 });
+			}
+
+			const idUsuario = toInteger(body.id_usuario);
+			const estado = body.estado ?? "CONFIRMADA";
+
+			if (idUsuario === null) {
+				return json({ ok: false, error: "id_usuario es obligatorio y debe ser entero." }, { status: 400 });
+			}
+
+			if (!["CONFIRMADA", "CANCELADA"].includes(estado)) {
+				return json(
+					{ ok: false, error: "estado debe ser CONFIRMADA o CANCELADA." },
+					{ status: 400 }
+				);
+			}
+
+			try {
+				await env.unparche_db
+					.prepare(
+						`INSERT INTO asistencia (
+							id_usuario,
+							id_evento,
+							estado
+						) VALUES (?, ?, ?)
+						ON CONFLICT(id_usuario, id_evento)
+						DO UPDATE SET estado = excluded.estado`
+					)
+					.bind(idUsuario, idEvento, estado)
+					.run();
+
+				const asistencia = await env.unparche_db
+					.prepare(
+						`SELECT
+							a.id_asistencia,
+							a.id_usuario,
+							u.nombre || ' ' || u.apellido AS usuario_nombre,
+							a.id_evento,
+							e.titulo AS evento_titulo,
+							a.estado,
+							a.notificaciones_activas,
+							a.fecha_confirmacion
+						FROM asistencia a
+						JOIN usuario u ON u.id_usuario = a.id_usuario
+						JOIN evento e ON e.id_evento = a.id_evento
+						WHERE a.id_usuario = ?
+						AND a.id_evento = ?`
+					)
+					.bind(idUsuario, idEvento)
+					.first();
+
+				return json(
+					{
+						ok: true,
+						message: "Asistencia registrada correctamente.",
+						asistencia,
+					},
+					{ status: 201 }
+				);
+			} catch (error) {
+				const message = error instanceof Error ? error.message : String(error);
+				const lowerMessage = message.toLowerCase();
+
+				if (lowerMessage.includes("foreign key constraint failed")) {
+					return json(
+						{ ok: false, error: "El evento o el usuario no existe." },
+						{ status: 400 }
+					);
+				}
+
+				if (
+					lowerMessage.includes("check constraint failed") ||
+					lowerMessage.includes("not null constraint failed") ||
+					lowerMessage.includes("unique constraint failed")
+				) {
+					return json(
+						{ ok: false, error: "Los datos enviados no cumplen las restricciones de la base de datos." },
+						{ status: 400 }
+					);
+				}
+
+				return json(
+					{ ok: false, error: "No se pudo registrar la asistencia." },
+					{ status: 500 }
+				);
+			}
 		}
 
 		if (request.method === "GET" && url.pathname === "/eventos") {
