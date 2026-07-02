@@ -111,6 +111,8 @@ export default {
 			return json({ ok: true, message: "UNparche API" });
 		}
 
+
+		// GET tipos-evento
 		if (request.method === "GET" && url.pathname === "/tipos-evento") {
 			const tiposEvento = await env.unparche_db
 				.prepare(
@@ -126,6 +128,7 @@ export default {
 			return json({ ok: true, tipos_evento: tiposEvento.results });
 		}
 
+		// GET grupos
 		if (request.method === "GET" && url.pathname === "/grupos") {
 			const grupos = await env.unparche_db
 				.prepare(
@@ -145,7 +148,8 @@ export default {
 
 			return json({ ok: true, grupos: grupos.results });
 		}
-
+		
+		// GET usuarios/id
 		const usuarioMatch = url.pathname.match(/^\/usuarios\/(\d+)$/);
 
 		if (request.method === "GET" && usuarioMatch) {
@@ -174,7 +178,8 @@ export default {
 
 			return json({ ok: true, usuario });
 		}
-
+		
+		// GET eventos/id
 		const eventoMatch = url.pathname.match(/^\/eventos\/(\d+)$/);
 
 		if (request.method === "GET" && eventoMatch) {
@@ -219,6 +224,7 @@ export default {
 			return json({ ok: true, evento });
 		}
 
+		// POST eventos/id/asistencias (asistencia de un usuario a un evento)
 		const asistenciaEventoMatch = url.pathname.match(/^\/eventos\/(\d+)\/asistencias$/);
 
 		if (request.method === "POST" && asistenciaEventoMatch) {
@@ -317,6 +323,70 @@ export default {
 			}
 		}
 
+		// DELETE asistencia (/eventos/:id/asistencias/:id_usuario)
+		const cancelarAsistenciaMatch = url.pathname.match(/^\/eventos\/(\d+)\/asistencias\/(\d+)$/);
+
+		if (request.method === "DELETE" && cancelarAsistenciaMatch) {
+			const idEvento = Number(cancelarAsistenciaMatch[1]);
+			const idUsuario = Number(cancelarAsistenciaMatch[2]);
+
+			const asistenciaExistente = await env.unparche_db
+				.prepare(
+					`SELECT
+						id_asistencia,
+						id_usuario,
+						id_evento,
+						estado
+					FROM asistencia
+					WHERE id_usuario = ?
+					AND id_evento = ?`
+				)
+				.bind(idUsuario, idEvento)
+				.first();
+
+			if (!asistenciaExistente) {
+				return json({ ok: false, error: "Asistencia no encontrada." }, { status: 404 });
+			}
+
+			await env.unparche_db
+				.prepare(
+					`UPDATE asistencia
+					SET estado = 'CANCELADA'
+					WHERE id_usuario = ?
+					AND id_evento = ?`
+				)
+				.bind(idUsuario, idEvento)
+				.run();
+
+			const asistencia = await env.unparche_db
+				.prepare(
+					`SELECT
+						a.id_asistencia,
+						a.id_usuario,
+						u.nombre || ' ' || u.apellido AS usuario_nombre,
+						a.id_evento,
+						e.titulo AS evento_titulo,
+						a.estado,
+						a.notificaciones_activas,
+						a.fecha_confirmacion
+					FROM asistencia a
+					JOIN usuario u ON u.id_usuario = a.id_usuario
+					JOIN evento e ON e.id_evento = a.id_evento
+					WHERE a.id_usuario = ?
+					AND a.id_evento = ?`
+				)
+				.bind(idUsuario, idEvento)
+				.first();
+
+			return json({
+				ok: true,
+				message: "Asistencia cancelada correctamente.",
+				asistencia,
+			});
+		}
+	
+
+		// GET eventos
 		if (request.method === "GET" && url.pathname === "/eventos") {
 			const eventos = await env.unparche_db
 				.prepare(
@@ -343,7 +413,9 @@ export default {
 
 			return json({ ok: true, eventos: eventos.results });
 		}
+		
 
+		// POST eventos
 		if (request.method === "POST" && url.pathname === "/eventos") {
 			let body: CrearEventoBody;
 
