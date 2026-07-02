@@ -1,7 +1,12 @@
 import 'package:flutter/material.dart';
 
+import 'event_api_client.dart';
+import 'location_picker_screen.dart';
+
 class CreateEventScreen extends StatefulWidget {
-  const CreateEventScreen({super.key});
+  const CreateEventScreen({super.key, this.eventApiClient});
+
+  final EventApiClient? eventApiClient;
 
   @override
   State<CreateEventScreen> createState() => _CreateEventScreenState();
@@ -11,6 +16,7 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
   static const _background = Color(0xFFFBF5F2);
   static const _surface = Color(0xFFF3ECE8);
   static const _ink = Color(0xFF263020);
+  static const _demoOrganizerId = 1;
 
   static const _eventTypes = [
     'Academico',
@@ -20,18 +26,32 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
     'Otro',
   ];
   static const _visibilityOptions = ['Publica', 'Solo grupo', 'Solo amigos'];
+  static const _eventTypeIds = {
+    'Academico': 1,
+    'Cultural': 2,
+    'Deportivo': 3,
+    'Social': 4,
+    'Otro': 5,
+  };
+  static const _visibilityApiValues = {
+    'Publica': 'PUBLICA',
+    'Solo grupo': 'SOLO_GRUPO',
+    'Solo amigos': 'SOLO_AMIGOS',
+  };
 
   final _formKey = GlobalKey<FormState>();
   final _titleController = TextEditingController();
   final _descriptionController = TextEditingController();
   final _durationController = TextEditingController(text: '60');
-  final _locationController = TextEditingController(text: 'Campus UNAL Bogota');
+  final _locationController = TextEditingController();
 
   DateTime? _selectedDate;
   TimeOfDay? _selectedTime;
   String _selectedType = _eventTypes.first;
   String _selectedVisibility = _visibilityOptions.first;
+  LocationSelection? _selectedLocation;
   bool _chatEnabled = true;
+  bool _isPublishing = false;
 
   @override
   void dispose() {
@@ -96,9 +116,32 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
     return time.format(context);
   }
 
-  void _publishEvent() {
+  Future<void> _pickLocation() async {
+    final location = await Navigator.of(context).push<LocationSelection>(
+      MaterialPageRoute(
+        builder: (_) =>
+            LocationPickerScreen(initialLocation: _selectedLocation),
+      ),
+    );
+
+    if (location == null) {
+      return;
+    }
+
+    setState(() {
+      _selectedLocation = location;
+      _locationController.text = location.label;
+    });
+  }
+
+  Future<void> _publishEvent() async {
+    if (_isPublishing) {
+      return;
+    }
+
     final isValid = _formKey.currentState?.validate() ?? false;
     final start = _selectedDateTime;
+    final location = _selectedLocation;
 
     if (start == null) {
       _showMessage('Selecciona fecha y hora de inicio.');
@@ -115,6 +158,11 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
       return;
     }
 
+    if (location == null) {
+      _showMessage('Selecciona la ubicacion en el mapa.');
+      return;
+    }
+
     if (!isValid) {
       return;
     }
@@ -122,21 +170,76 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
     final duration = int.parse(_durationController.text.trim());
     final end = start.add(Duration(minutes: duration));
     final deletionDate = end.add(const Duration(hours: 24));
+    final eventTypeId = _eventTypeIds[_selectedType]!;
+    final visibility = _visibilityApiValues[_selectedVisibility]!;
 
-    Navigator.of(context).pop(
-      CreatedEventDraft(
-        title: _titleController.text.trim(),
-        description: _descriptionController.text.trim(),
-        start: start,
-        durationMinutes: duration,
-        end: end,
-        deletionDate: deletionDate,
-        locationLabel: _locationController.text.trim(),
-        type: _selectedType,
-        visibility: _selectedVisibility,
-        chatEnabled: _chatEnabled,
-      ),
-    );
+    setState(() => _isPublishing = true);
+
+    try {
+      final apiClient = widget.eventApiClient ?? EventApiClient();
+      final request =
+          (CreateEventRequestBuilder()
+                ..withTitle(_titleController.text.trim())
+                ..withDescription(_descriptionController.text.trim())
+                ..startingAt(start)
+                ..lastingMinutes(duration)
+                ..atLocation(
+                  latitude: location.latitude,
+                  longitude: location.longitude,
+                )
+                ..visibleAs(visibility)
+                ..organizedBy(_demoOrganizerId)
+                ..typedAs(eventTypeId)
+                ..withChatEnabled(_chatEnabled))
+              .build();
+      final response = await apiClient.createEvent(request);
+
+      if (!mounted) {
+        return;
+      }
+
+      final createdEvent = response['evento'];
+      final eventId = createdEvent is Map<String, dynamic>
+          ? createdEvent['id_evento'] as int?
+          : null;
+
+      Navigator.of(context).pop(
+        CreatedEventDraft(
+          id: eventId,
+          title: _titleController.text.trim(),
+          description: _descriptionController.text.trim(),
+          start: start,
+          durationMinutes: duration,
+          end: end,
+          deletionDate: deletionDate,
+          locationLabel: _locationController.text.trim(),
+          latitude: location.latitude,
+          longitude: location.longitude,
+          eventTypeId: eventTypeId,
+          type: _selectedType,
+          visibility: _selectedVisibility,
+          chatEnabled: _chatEnabled,
+        ),
+      );
+    } on EventApiException catch (error) {
+      if (!mounted) {
+        return;
+      }
+
+      _showMessage(error.message);
+    } catch (_) {
+      if (!mounted) {
+        return;
+      }
+
+      _showMessage(
+        'No se pudo conectar con la API. Revisa que el backend este corriendo.',
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _isPublishing = false);
+      }
+    }
   }
 
   void _showMessage(String message) {
@@ -238,14 +341,17 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
               const SizedBox(height: 16),
               TextFormField(
                 controller: _locationController,
+                readOnly: true,
+                onTap: _pickLocation,
                 decoration: const InputDecoration(
                   labelText: 'Ubicacion',
                   prefixIcon: Icon(Icons.location_on_outlined),
-                  hintText: 'Lugar dentro del campus',
+                  suffixIcon: Icon(Icons.map_outlined),
+                  hintText: 'Toca para marcar el punto en el mapa',
                 ),
                 validator: (value) {
                   if (value == null || value.trim().isEmpty) {
-                    return 'La ubicacion es obligatoria.';
+                    return 'Marca la ubicacion en el mapa.';
                   }
                   return null;
                 },
@@ -309,9 +415,17 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
               SizedBox(
                 height: 54,
                 child: FilledButton.icon(
-                  onPressed: _publishEvent,
-                  icon: const Icon(Icons.publish),
-                  label: const Text('Publicar evento'),
+                  onPressed: _isPublishing ? null : _publishEvent,
+                  icon: _isPublishing
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2.5),
+                        )
+                      : const Icon(Icons.publish),
+                  label: Text(
+                    _isPublishing ? 'Publicando...' : 'Publicar evento',
+                  ),
                   style: FilledButton.styleFrom(
                     backgroundColor: _ink,
                     foregroundColor: Colors.white,
@@ -341,6 +455,7 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
 
 class CreatedEventDraft {
   const CreatedEventDraft({
+    this.id,
     required this.title,
     required this.description,
     required this.start,
@@ -348,11 +463,15 @@ class CreatedEventDraft {
     required this.end,
     required this.deletionDate,
     required this.locationLabel,
+    required this.latitude,
+    required this.longitude,
+    required this.eventTypeId,
     required this.type,
     required this.visibility,
     required this.chatEnabled,
   });
 
+  final int? id;
   final String title;
   final String description;
   final DateTime start;
@@ -360,6 +479,9 @@ class CreatedEventDraft {
   final DateTime end;
   final DateTime deletionDate;
   final String locationLabel;
+  final double latitude;
+  final double longitude;
+  final int eventTypeId;
   final String type;
   final String visibility;
   final bool chatEnabled;

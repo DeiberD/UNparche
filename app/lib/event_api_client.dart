@@ -1,0 +1,307 @@
+import 'dart:convert';
+import 'dart:io';
+
+class EventApiClient {
+  EventApiClient({String? baseUrl, HttpClient? httpClient})
+    : _baseUri = Uri.parse(baseUrl ?? defaultBaseUrl),
+      _httpClient = httpClient ?? HttpClient();
+
+  static const _configuredBaseUrl = String.fromEnvironment('API_BASE_URL');
+  static String get defaultBaseUrl {
+    if (_configuredBaseUrl.isNotEmpty) {
+      return _configuredBaseUrl;
+    }
+
+    return Platform.isAndroid
+        ? 'http://10.0.2.2:8787'
+        : 'http://127.0.0.1:8787';
+  }
+
+  final Uri _baseUri;
+  final HttpClient _httpClient;
+
+  Future<List<EventSummary>> fetchEvents() async {
+    final request = await _httpClient.getUrl(_baseUri.resolve('/eventos'));
+    final response = await request.close();
+    final responseBody = await response.transform(utf8.decoder).join();
+    final decoded = responseBody.isEmpty ? null : jsonDecode(responseBody);
+
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      final message = decoded is Map<String, dynamic>
+          ? decoded['error']?.toString()
+          : null;
+      throw EventApiException(
+        message ?? 'No se pudieron cargar los eventos.',
+        statusCode: response.statusCode,
+      );
+    }
+
+    if (decoded is! Map<String, dynamic> || decoded['eventos'] is! List) {
+      throw const EventApiException(
+        'La API devolvio una respuesta inesperada.',
+      );
+    }
+
+    return (decoded['eventos'] as List)
+        .whereType<Map<String, dynamic>>()
+        .map(EventSummary.fromJson)
+        .where((event) => event.hasLocation)
+        .toList();
+  }
+
+  Future<Map<String, dynamic>> createEvent(CreateEventRequest event) async {
+    final request = await _httpClient.postUrl(_baseUri.resolve('/eventos'));
+    request.headers.contentType = ContentType.json;
+    request.write(jsonEncode(event.toJson()));
+
+    final response = await request.close();
+    final responseBody = await response.transform(utf8.decoder).join();
+    final decoded = responseBody.isEmpty ? null : jsonDecode(responseBody);
+
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      final message = decoded is Map<String, dynamic>
+          ? decoded['error']?.toString()
+          : null;
+      throw EventApiException(
+        message ?? 'No se pudo crear el evento.',
+        statusCode: response.statusCode,
+      );
+    }
+
+    if (decoded is! Map<String, dynamic>) {
+      throw const EventApiException(
+        'La API devolvio una respuesta inesperada.',
+      );
+    }
+
+    return decoded;
+  }
+}
+
+class EventSummary {
+  const EventSummary({
+    required this.id,
+    required this.title,
+    required this.start,
+    required this.latitude,
+    required this.longitude,
+    required this.eventTypeId,
+  });
+
+  factory EventSummary.fromJson(Map<String, dynamic> json) {
+    return EventSummary(
+      id: json['id_evento'] is int ? json['id_evento'] as int : null,
+      title: json['titulo']?.toString() ?? 'Evento',
+      start: _toDateTime(json['fecha_inicio']),
+      latitude: _toDouble(json['latitud']),
+      longitude: _toDouble(json['longitud']),
+      eventTypeId: json['id_tipo_evento'] is int
+          ? json['id_tipo_evento'] as int
+          : null,
+    );
+  }
+
+  final int? id;
+  final String title;
+  final DateTime? start;
+  final double? latitude;
+  final double? longitude;
+  final int? eventTypeId;
+
+  bool get hasLocation => latitude != null && longitude != null;
+
+  bool isVisibleByDefault(DateTime now) {
+    final eventStart = start;
+    if (eventStart == null) {
+      return false;
+    }
+
+    final todayStart = DateTime(now.year, now.month, now.day);
+    final next24Hours = now.add(const Duration(hours: 24));
+
+    return !eventStart.isBefore(todayStart) && !eventStart.isAfter(next24Hours);
+  }
+
+  static double? _toDouble(Object? value) {
+    if (value is int) {
+      return value.toDouble();
+    }
+
+    if (value is double) {
+      return value;
+    }
+
+    return null;
+  }
+
+  static DateTime? _toDateTime(Object? value) {
+    if (value is! String || value.trim().isEmpty) {
+      return null;
+    }
+
+    return DateTime.tryParse(value.trim()) ??
+        DateTime.tryParse(value.trim().replaceFirst(' ', 'T'));
+  }
+}
+
+class CreateEventRequest {
+  const CreateEventRequest({
+    required this.title,
+    required this.description,
+    required this.start,
+    required this.durationMinutes,
+    required this.latitude,
+    required this.longitude,
+    required this.visibility,
+    required this.organizerId,
+    required this.eventTypeId,
+    required this.chatEnabled,
+    this.groupId,
+  });
+
+  final String title;
+  final String description;
+  final DateTime start;
+  final int durationMinutes;
+  final double latitude;
+  final double longitude;
+  final String visibility;
+  final int organizerId;
+  final int eventTypeId;
+  final int? groupId;
+  final bool chatEnabled;
+
+  Map<String, dynamic> toJson() {
+    return {
+      'titulo': title,
+      'descripcion': description,
+      'fecha_inicio': start.toUtc().toIso8601String(),
+      'duracion_minutos': durationMinutes,
+      'latitud': latitude,
+      'longitud': longitude,
+      'visibilidad': visibility,
+      'id_organizador': organizerId,
+      'id_tipo_evento': eventTypeId,
+      'id_grupo': groupId,
+      'chat_habilitado': chatEnabled,
+    };
+  }
+}
+
+class CreateEventRequestBuilder {
+  String? _title;
+  String? _description;
+  DateTime? _start;
+  int? _durationMinutes;
+  double? _latitude;
+  double? _longitude;
+  String? _visibility;
+  int? _organizerId;
+  int? _eventTypeId;
+  int? _groupId;
+  bool? _chatEnabled;
+
+  CreateEventRequestBuilder withTitle(String value) {
+    _title = value;
+    return this;
+  }
+
+  CreateEventRequestBuilder withDescription(String value) {
+    _description = value;
+    return this;
+  }
+
+  CreateEventRequestBuilder startingAt(DateTime value) {
+    _start = value;
+    return this;
+  }
+
+  CreateEventRequestBuilder lastingMinutes(int value) {
+    _durationMinutes = value;
+    return this;
+  }
+
+  CreateEventRequestBuilder atLocation({
+    required double latitude,
+    required double longitude,
+  }) {
+    _latitude = latitude;
+    _longitude = longitude;
+    return this;
+  }
+
+  CreateEventRequestBuilder visibleAs(String value) {
+    _visibility = value;
+    return this;
+  }
+
+  CreateEventRequestBuilder organizedBy(int value) {
+    _organizerId = value;
+    return this;
+  }
+
+  CreateEventRequestBuilder typedAs(int value) {
+    _eventTypeId = value;
+    return this;
+  }
+
+  CreateEventRequestBuilder forGroup(int? value) {
+    _groupId = value;
+    return this;
+  }
+
+  CreateEventRequestBuilder withChatEnabled(bool value) {
+    _chatEnabled = value;
+    return this;
+  }
+
+  CreateEventRequest build() {
+    final title = _title;
+    final description = _description;
+    final start = _start;
+    final durationMinutes = _durationMinutes;
+    final latitude = _latitude;
+    final longitude = _longitude;
+    final visibility = _visibility;
+    final organizerId = _organizerId;
+    final eventTypeId = _eventTypeId;
+    final chatEnabled = _chatEnabled;
+
+    if (title == null ||
+        description == null ||
+        start == null ||
+        durationMinutes == null ||
+        latitude == null ||
+        longitude == null ||
+        visibility == null ||
+        organizerId == null ||
+        eventTypeId == null ||
+        chatEnabled == null) {
+      throw StateError('Faltan campos para construir la solicitud de evento.');
+    }
+
+    return CreateEventRequest(
+      title: title,
+      description: description,
+      start: start,
+      durationMinutes: durationMinutes,
+      latitude: latitude,
+      longitude: longitude,
+      visibility: visibility,
+      organizerId: organizerId,
+      eventTypeId: eventTypeId,
+      groupId: _groupId,
+      chatEnabled: chatEnabled,
+    );
+  }
+}
+
+class EventApiException implements Exception {
+  const EventApiException(this.message, {this.statusCode});
+
+  final String message;
+  final int? statusCode;
+
+  @override
+  String toString() => message;
+}
