@@ -316,7 +316,62 @@ export default {
 				eventos: eventos.results,
 			});
 		}
-		
+
+		// GET miembros de un grupo (/grupos/:id/eventos)
+		const miembrosGrupoMatch = url.pathname.match(/^\/grupos\/(\d+)\/miembros$/);
+
+		if (request.method === "GET" && miembrosGrupoMatch) {
+			const idGrupo = Number(miembrosGrupoMatch[1]);
+
+			const grupo = await env.unparche_db
+				.prepare(
+					`SELECT
+						id_grupo,
+						nombre,
+						descripcion,
+						categoria,
+						es_oficial,
+						estado_verificacion,
+						fecha_creacion,
+						id_administrador
+					FROM grupo
+					WHERE id_grupo = ?`
+				)
+				.bind(idGrupo)
+				.first();
+
+			if (!grupo) {
+				return json({ ok: false, error: "Grupo no encontrado." }, { status: 404 });
+			}
+
+			const miembros = await env.unparche_db
+				.prepare(
+					`SELECT
+						m.id_membresia,
+						m.id_grupo,
+						m.id_usuario,
+						u.nombre || ' ' || u.apellido AS usuario_nombre,
+						u.correo_institucional,
+						u.carrera,
+						m.rol_grupo,
+						m.estado,
+						m.fecha_union
+					FROM membresia_grupo m
+					JOIN usuario u ON u.id_usuario = m.id_usuario
+					WHERE m.id_grupo = ?
+					ORDER BY m.fecha_union DESC`
+				)
+				.bind(idGrupo)
+				.all();
+
+			return json({
+				ok: true,
+				grupo,
+				miembros: miembros.results,
+			});
+		}
+
+
 		// GET usuarios/id
 		const usuarioMatch = url.pathname.match(/^\/usuarios\/(\d+)$/);
 
