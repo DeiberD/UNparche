@@ -21,6 +21,13 @@ type CrearAsistenciaBody = {
 	estado?: "CONFIRMADA" | "CANCELADA";
 };
 
+type CrearGrupoBody = {
+	nombre?: string;
+	descripcion?: string;
+	categoria?: string;
+	id_administrador?: number;
+};
+
 const corsHeaders = {
 	"Access-Control-Allow-Origin": "*",
 	"Access-Control-Allow-Methods": "GET, POST, PATCH, DELETE, OPTIONS",
@@ -147,6 +154,100 @@ export default {
 				.all();
 
 			return json({ ok: true, grupos: grupos.results });
+		}
+
+		// POST grupos (/grupos)
+		if (request.method === "POST" && url.pathname === "/grupos") {
+			let body: CrearGrupoBody;
+
+			try {
+				body = await request.json();
+			} catch {
+				return json({ ok: false, error: "El body debe ser JSON valido." }, { status: 400 });
+			}
+
+			const nombre = typeof body.nombre === "string" ? body.nombre.trim() : "";
+			const descripcion = typeof body.descripcion === "string" ? body.descripcion.trim() : null;
+			const categoria = typeof body.categoria === "string" ? body.categoria.trim().toUpperCase() : "";
+			const idAdministrador = toInteger(body.id_administrador);
+
+			if (!nombre || !categoria || idAdministrador === null) {
+				return json(
+					{
+						ok: false,
+						error: "nombre, categoria e id_administrador son obligatorios.",
+					},
+					{ status: 400 }
+				);
+			}
+
+			try {
+				const result = await env.unparche_db
+					.prepare(
+						`INSERT INTO grupo (
+							nombre,
+							descripcion,
+							categoria,
+							id_administrador
+						) VALUES (?, ?, ?, ?)`
+					)
+					.bind(nombre, descripcion, categoria, idAdministrador)
+					.run();
+
+				const idGrupo = result.meta.last_row_id;
+
+				const grupo = await env.unparche_db
+					.prepare(
+						`SELECT
+							id_grupo,
+							nombre,
+							descripcion,
+							categoria,
+							es_oficial,
+							estado_verificacion,
+							fecha_creacion,
+							id_administrador
+						FROM grupo
+						WHERE id_grupo = ?`
+					)
+					.bind(idGrupo)
+					.first();
+
+				return json(
+					{
+						ok: true,
+						message: "Grupo creado correctamente.",
+						grupo,
+					},
+					{ status: 201 }
+				);
+			} catch (error) {
+				const message = error instanceof Error ? error.message : String(error);
+				const lowerMessage = message.toLowerCase();
+
+				if (lowerMessage.includes("foreign key constraint failed")) {
+					return json(
+						{ ok: false, error: "El id_administrador no existe." },
+						{ status: 400 }
+					);
+				}
+
+				if (
+					lowerMessage.includes("check constraint failed") ||
+					lowerMessage.includes("not null constraint failed") ||
+					lowerMessage.includes("unique constraint failed")
+				) {
+					return json(
+						{ ok: false, error: "Los datos enviados no cumplen las restricciones de la base de datos." },
+						{ status: 400 }
+					);
+				}
+
+				return json(
+					{ ok: false, error: "No se pudo crear el grupo." },
+					{ status: 500 }
+				);
+			}
 		}
 		
 		// GET usuarios/id
