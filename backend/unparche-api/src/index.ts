@@ -170,6 +170,50 @@ export default {
 			return json({ ok: true, usuario });
 		}
 
+		const eventoMatch = url.pathname.match(/^\/eventos\/(\d+)$/);
+
+		if (request.method === "GET" && eventoMatch) {
+			const idEvento = Number(eventoMatch[1]);
+
+			const evento = await env.unparche_db
+				.prepare(
+					`SELECT
+						e.id_evento,
+						e.titulo,
+						e.descripcion,
+						e.fecha_inicio,
+						e.duracion_minutos,
+						e.fecha_fin,
+						e.fecha_publicacion,
+						e.latitud,
+						e.longitud,
+						e.visibilidad,
+						e.chat_habilitado,
+						e.estado,
+						e.id_organizador,
+						u.nombre || ' ' || u.apellido AS organizador_nombre,
+						e.id_grupo,
+						g.nombre AS grupo_nombre,
+						e.id_tipo_evento,
+						t.nombre AS tipo_evento_nombre,
+						t.icono_svg AS tipo_evento_icono
+					FROM evento e
+					JOIN usuario u ON u.id_usuario = e.id_organizador
+					JOIN tipo_evento t ON t.id_tipo_evento = e.id_tipo_evento
+					LEFT JOIN grupo g ON g.id_grupo = e.id_grupo
+					WHERE e.id_evento = ?
+					AND e.fecha_eliminacion IS NULL`
+				)
+				.bind(idEvento)
+				.first();
+
+			if (!evento) {
+				return json({ ok: false, error: "Evento no encontrado." }, { status: 404 });
+			}
+
+			return json({ ok: true, evento });
+		}
+
 		if (request.method === "GET" && url.pathname === "/eventos") {
 			const eventos = await env.unparche_db
 				.prepare(
