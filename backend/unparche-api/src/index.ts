@@ -908,6 +908,79 @@ export default {
 			}
 		}
 
+		// DELETE borrar evento (/eventos/:id)
+		if (request.method === "DELETE" && eventoMatch) {
+			const idEvento = Number(eventoMatch[1]);
+
+			const eventoActual = await env.unparche_db
+				.prepare(
+					`SELECT
+						id_evento,
+						titulo,
+						estado,
+						fecha_eliminacion
+					FROM evento
+					WHERE id_evento = ?
+					AND fecha_eliminacion IS NULL`
+				)
+				.bind(idEvento)
+				.first();
+
+			if (!eventoActual) {
+				return json({ ok: false, error: "Evento no encontrado." }, { status: 404 });
+			}
+
+			try {
+				await env.unparche_db
+					.prepare(
+						`UPDATE evento
+						SET
+							estado = 'CANCELADO',
+							fecha_eliminacion = CURRENT_TIMESTAMP
+						WHERE id_evento = ?
+						AND fecha_eliminacion IS NULL`
+					)
+					.bind(idEvento)
+					.run();
+
+				const evento = await env.unparche_db
+					.prepare(
+						`SELECT
+							id_evento,
+							titulo,
+							descripcion,
+							fecha_inicio,
+							duracion_minutos,
+							fecha_fin,
+							fecha_publicacion,
+							fecha_eliminacion,
+							latitud,
+							longitud,
+							visibilidad,
+							chat_habilitado,
+							estado,
+							id_organizador,
+							id_grupo,
+							id_tipo_evento
+						FROM evento
+						WHERE id_evento = ?`
+					)
+					.bind(idEvento)
+					.first();
+
+				return json({
+					ok: true,
+					message: "Evento eliminado correctamente.",
+					evento,
+				});
+			} catch {
+				return json(
+					{ ok: false, error: "No se pudo eliminar el evento." },
+					{ status: 500 }
+				);
+			}
+		}
+
 		// POST eventos/id/asistencias (asistencia de un usuario a un evento)
 		const asistenciaEventoMatch = url.pathname.match(/^\/eventos\/(\d+)\/asistencias$/);
 
