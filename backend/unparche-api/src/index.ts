@@ -53,6 +53,13 @@ type ActualizarEventoBody = {
 	estado?: "PROGRAMADO" | "CANCELADO" | "FINALIZADO";
 };
 
+const EVENT_RETENTION_HOURS = 24;
+const expiredEventCondition = `datetime(fecha_fin) <= datetime('now', '-${EVENT_RETENTION_HOURS} hours')`;
+const activeEventCondition = `fecha_eliminacion IS NULL
+				AND datetime(fecha_fin) > datetime('now', '-${EVENT_RETENTION_HOURS} hours')`;
+const activeEventConditionForAlias = (alias: string) => `${alias}.fecha_eliminacion IS NULL
+					AND datetime(${alias}.fecha_fin) > datetime('now', '-${EVENT_RETENTION_HOURS} hours')`;
+
 const corsHeaders = {
 	"Access-Control-Allow-Origin": "*",
 	"Access-Control-Allow-Methods": "GET, POST, PATCH, DELETE, OPTIONS",
@@ -106,6 +113,19 @@ const toBoolean = (value: unknown, defaultValue: boolean) => {
 	return null;
 };
 
+const pruneExpiredEvents = async (db: D1Database) =>
+	db
+		.prepare(
+			`UPDATE evento
+			 SET
+				estado = 'FINALIZADO',
+				fecha_eliminacion = CURRENT_TIMESTAMP,
+				chat_habilitado = 0
+			 WHERE fecha_eliminacion IS NULL
+			 AND ${expiredEventCondition}`
+		)
+		.run();
+
 const selectEventoById = async (db: D1Database, idEvento: number) =>
 	db
 		.prepare(
@@ -126,7 +146,8 @@ const selectEventoById = async (db: D1Database, idEvento: number) =>
 				id_grupo,
 				id_tipo_evento
 			 FROM evento
-			 WHERE id_evento = ?`
+			 WHERE id_evento = ?
+			 AND ${activeEventCondition}`
 		)
 		.bind(idEvento)
 		.first();
@@ -213,6 +234,10 @@ const selectInvitacionGrupoById = async (db: D1Database, idInvitacion: number) =
 		.first();
 
 export default {
+	async scheduled(_event, env, ctx): Promise<void> {
+		ctx.waitUntil(pruneExpiredEvents(env.unparche_db));
+	},
+
 	async fetch(request, env): Promise<Response> {
 		const url = new URL(request.url);
 
@@ -457,7 +482,7 @@ export default {
 					JOIN tipo_evento t ON t.id_tipo_evento = e.id_tipo_evento
 					JOIN grupo g ON g.id_grupo = e.id_grupo
 					WHERE e.id_grupo = ?
-					AND e.fecha_eliminacion IS NULL
+					AND ${activeEventConditionForAlias("e")}
 					ORDER BY e.fecha_inicio DESC`
 				)
 				.bind(idGrupo)
@@ -824,7 +849,7 @@ export default {
 					JOIN tipo_evento t ON t.id_tipo_evento = e.id_tipo_evento
 					LEFT JOIN grupo g ON g.id_grupo = e.id_grupo
 					WHERE e.id_organizador = ?
-					AND e.fecha_eliminacion IS NULL
+					AND ${activeEventConditionForAlias("e")}
 					ORDER BY e.fecha_inicio DESC`
 				)
 				.bind(idUsuario)
@@ -861,7 +886,7 @@ export default {
 					LEFT JOIN grupo g ON g.id_grupo = e.id_grupo
 					WHERE a.id_usuario = ?
 					AND a.estado = 'CONFIRMADA'
-					AND e.fecha_eliminacion IS NULL
+					AND ${activeEventConditionForAlias("e")}
 					ORDER BY e.fecha_inicio DESC`
 				)
 				.bind(idUsuario)
@@ -916,7 +941,7 @@ export default {
 					JOIN tipo_evento t ON t.id_tipo_evento = e.id_tipo_evento
 					LEFT JOIN grupo g ON g.id_grupo = e.id_grupo
 					WHERE e.id_evento = ?
-					AND e.fecha_eliminacion IS NULL`
+					AND ${activeEventConditionForAlias("e")}`
 				)
 				.bind(idEvento)
 				.first();
@@ -957,7 +982,7 @@ export default {
 						id_tipo_evento
 					FROM evento
 					WHERE id_evento = ?
-					AND fecha_eliminacion IS NULL`
+					AND ${activeEventCondition}`
 				)
 				.bind(idEvento)
 				.first<{
@@ -1172,7 +1197,7 @@ export default {
 						fecha_eliminacion
 					FROM evento
 					WHERE id_evento = ?
-					AND fecha_eliminacion IS NULL`
+					AND ${activeEventCondition}`
 				)
 				.bind(idEvento)
 				.first();
@@ -1258,6 +1283,22 @@ export default {
 					{ ok: false, error: "estado debe ser CONFIRMADA o CANCELADA." },
 					{ status: 400 }
 				);
+			}
+
+			const evento = await env.unparche_db
+				.prepare(
+					`SELECT
+						id_evento,
+						chat_habilitado
+					FROM evento
+					WHERE id_evento = ?
+					AND ${activeEventCondition}`
+				)
+				.bind(idEvento)
+				.first();
+
+			if (!evento) {
+				return json({ ok: false, error: "Evento no encontrado o finalizado." }, { status: 404 });
 			}
 
 			try {
@@ -1494,7 +1535,7 @@ export default {
 					JOIN usuario u ON u.id_usuario = e.id_organizador
 					JOIN tipo_evento t ON t.id_tipo_evento = e.id_tipo_evento
 					LEFT JOIN grupo g ON g.id_grupo = e.id_grupo
-					WHERE e.fecha_eliminacion IS NULL
+					WHERE ${activeEventConditionForAlias("e")}
 					ORDER BY e.fecha_inicio DESC`
 				)
 				.all();

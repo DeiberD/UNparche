@@ -21,7 +21,12 @@
 			"database_id": "e44ff154-f228-4954-be86-ee4247eb88e6",
 			"migrations_dir": "../../database/d1/migrations"
 		}
-	]
+	],
+	"triggers": {
+		"crons": [
+			"0 * * * *"
+		]
+	}
 	/**
 	 * Smart Placement
 	 * https://developers.cloudflare.com/workers/configuration/smart-placement/#smart-placement
