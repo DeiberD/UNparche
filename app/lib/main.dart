@@ -4,10 +4,11 @@ import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart';
 import 'create_event_screen.dart';
 import 'event_api_client.dart';
 import 'view_events_screen.dart';
+import 'view_groups_screen.dart';
 
 const _mapboxAccessToken = String.fromEnvironment('ACCESS_TOKEN');
 
-enum _HomeTab { map, events }
+enum _HomeTab { map, events, groups }
 
 class EventFilters {
   const EventFilters({this.date, this.eventTypeId, this.groupId});
@@ -99,6 +100,7 @@ class _CampusMapScreenState extends State<CampusMapScreen> {
   List<EventSummary> _allEvents = [];
   _HomeTab _selectedTab = _HomeTab.map;
   EventFilters _filters = const EventFilters();
+  EventTimeScope _eventTimeScope = EventTimeScope.future;
   EventSummary? _focusedEvent;
   bool _isLoadingEvents = false;
   String? _eventsError;
@@ -201,14 +203,22 @@ class _CampusMapScreenState extends State<CampusMapScreen> {
   }
 
   List<EventSummary> get _filteredEvents {
+    return _eventsMatchingFilters(includeDate: true);
+  }
+
+  List<EventSummary> get _eventsForCalendar {
+    return _eventsMatchingFilters(includeDate: false);
+  }
+
+  List<EventSummary> _eventsMatchingFilters({required bool includeDate}) {
     final now = DateTime.now();
     return _allEvents.where((event) {
-      if (!event.isVisibleByDefault(now)) {
+      if (!_matchesTimeScope(event, now)) {
         return false;
       }
 
       final date = _filters.date;
-      if (date != null) {
+      if (includeDate && date != null) {
         final start = event.start;
         if (start == null || !DateUtils.isSameDay(start.toLocal(), date)) {
           return false;
@@ -229,6 +239,26 @@ class _CampusMapScreenState extends State<CampusMapScreen> {
     }).toList();
   }
 
+  bool _matchesTimeScope(EventSummary event, DateTime now) {
+    final eventStart = event.start;
+    if (!event.isPublic || eventStart == null) {
+      return false;
+    }
+
+    final eventDate = DateUtils.dateOnly(eventStart.toLocal());
+    final today = DateUtils.dateOnly(now);
+    final next7Days = DateUtils.dateOnly(now.add(const Duration(days: 7)));
+
+    return switch (_eventTimeScope) {
+      EventTimeScope.future =>
+        event.isActive &&
+            !eventDate.isBefore(today) &&
+            !eventDate.isAfter(next7Days),
+      EventTimeScope.past =>
+        event.status != 'CANCELADO' && eventDate.isBefore(today),
+    };
+  }
+
   List<int> get _availableGroupIds {
     final groupIds =
         _allEvents
@@ -242,11 +272,31 @@ class _CampusMapScreenState extends State<CampusMapScreen> {
 
   Future<void> _pickDateFilter() async {
     final now = DateTime.now();
+    final firstDate = _eventTimeScope == EventTimeScope.past
+        ? DateTime(now.year - 5)
+        : DateTime(now.year, now.month, now.day);
+    final lastDate = _eventTimeScope == EventTimeScope.past
+        ? DateTime(
+            now.year,
+            now.month,
+            now.day,
+          ).subtract(const Duration(days: 1))
+        : DateTime(now.year, now.month, now.day).add(const Duration(days: 7));
+    final selectedDate = _filters.date;
+    final defaultDate = _eventTimeScope == EventTimeScope.past
+        ? lastDate
+        : firstDate;
+    final initialDate =
+        selectedDate != null &&
+            !selectedDate.isBefore(firstDate) &&
+            !selectedDate.isAfter(lastDate)
+        ? selectedDate
+        : defaultDate;
     final picked = await showDatePicker(
       context: context,
-      initialDate: _filters.date ?? now,
-      firstDate: DateTime(now.year, now.month, now.day),
-      lastDate: now.add(const Duration(days: 7)),
+      initialDate: initialDate,
+      firstDate: firstDate,
+      lastDate: lastDate,
     );
 
     if (picked != null) {
@@ -310,43 +360,64 @@ class _CampusMapScreenState extends State<CampusMapScreen> {
   @override
   Widget build(BuildContext context) {
     final filteredEvents = _filteredEvents;
+    final showEventControls = _selectedTab != _HomeTab.groups;
 
     return Scaffold(
       body: SafeArea(
         child: Stack(
           children: [
             Positioned.fill(
-              child: _selectedTab == _HomeTab.map
-                  ? _mapboxAccessToken.isEmpty
-                        ? const MissingMapboxTokenView()
-                        : UNALMap(
-                            events: filteredEvents,
-                            focusedEvent: _focusedEvent,
-                          )
-                  : EventsListView(
-                      events: filteredEvents,
-                      isLoading: _isLoadingEvents,
-                      errorMessage: _eventsError,
-                      onRefresh: _loadVisibleEvents,
-                      onEventTap: _openEventDetails,
-                    ),
+              child: switch (_selectedTab) {
+                _HomeTab.map =>
+                  _mapboxAccessToken.isEmpty
+                      ? const MissingMapboxTokenView()
+                      : UNALMap(
+                          events: filteredEvents,
+                          focusedEvent: _focusedEvent,
+                        ),
+                _HomeTab.events => EventsListView(
+                  events: filteredEvents,
+                  calendarEvents: _eventsForCalendar,
+                  selectedDate: _filters.date,
+                  timeScope: _eventTimeScope,
+                  isLoading: _isLoadingEvents,
+                  errorMessage: _eventsError,
+                  onRefresh: _loadVisibleEvents,
+                  onEventTap: _openEventDetails,
+                  onDateSelected: (date) {
+                    setState(() {
+                      _filters = date == null
+                          ? _filters.copyWith(clearDate: true)
+                          : _filters.copyWith(date: date);
+                    });
+                  },
+                  onTimeScopeChanged: (scope) {
+                    setState(() {
+                      _eventTimeScope = scope;
+                      _filters = _filters.copyWith(clearDate: true);
+                    });
+                  },
+                ),
+                _HomeTab.groups => const GroupsScreen(),
+              },
             ),
             const Positioned(left: 16, right: 16, top: 14, child: MapHeader()),
-            Positioned(
-              left: 16,
-              right: 16,
-              top: 82,
-              child: EventFiltersBar(
-                filters: _filters,
-                onDatePressed: _pickDateFilter,
-                onTypePressed: _pickEventTypeFilter,
-                onGroupPressed: _pickGroupFilter,
-                onClearPressed: _filters.hasActiveFilters
-                    ? _clearFilters
-                    : null,
+            if (showEventControls)
+              Positioned(
+                left: 16,
+                right: 16,
+                top: 82,
+                child: EventFiltersBar(
+                  filters: _filters,
+                  onDatePressed: _pickDateFilter,
+                  onTypePressed: _pickEventTypeFilter,
+                  onGroupPressed: _pickGroupFilter,
+                  onClearPressed: _filters.hasActiveFilters
+                      ? _clearFilters
+                      : null,
+                ),
               ),
-            ),
-            if (_isLoadingEvents || _eventsError != null)
+            if (showEventControls && (_isLoadingEvents || _eventsError != null))
               Positioned(
                 left: 18,
                 right: 18,
@@ -365,18 +436,19 @@ class _CampusMapScreenState extends State<CampusMapScreen> {
                 onTabSelected: (tab) => setState(() => _selectedTab = tab),
               ),
             ),
-            Positioned(
-              right: 18,
-              bottom: 104,
-              child: FloatingActionButton(
-                heroTag: 'createEvent',
-                tooltip: 'Crear evento',
-                backgroundColor: CampusMapScreen._ink,
-                foregroundColor: Colors.white,
-                onPressed: () => _openCreateEvent(context),
-                child: const Icon(Icons.add),
+            if (showEventControls)
+              Positioned(
+                right: 18,
+                bottom: 104,
+                child: FloatingActionButton(
+                  heroTag: 'createEvent',
+                  tooltip: 'Crear evento',
+                  backgroundColor: CampusMapScreen._ink,
+                  foregroundColor: Colors.white,
+                  onPressed: () => _openCreateEvent(context),
+                  child: const Icon(Icons.add),
+                ),
               ),
-            ),
             if (_selectedTab == _HomeTab.map)
               Positioned(
                 right: 18,
@@ -981,7 +1053,8 @@ class _BottomNavigationMock extends StatelessWidget {
           BottomNavItem(
             icon: Icons.groups_outlined,
             label: 'Grupos',
-            onPressed: () {},
+            selected: selectedTab == _HomeTab.groups,
+            onPressed: () => onTabSelected(_HomeTab.groups),
           ),
           BottomNavItem(
             icon: Icons.person_outline,

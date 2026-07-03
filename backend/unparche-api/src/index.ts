@@ -35,6 +35,10 @@ type AgregarMiembroGrupoBody = {
 	estado?: "ACTIVA" | "INACTIVA";
 };
 
+type ActualizarInvitacionGrupoBody = {
+	estado?: "ACEPTADA" | "RECHAZADA";
+};
+
 type ActualizarEventoBody = {
 	titulo?: string;
 	descripcion?: string;
@@ -140,6 +144,7 @@ const selectGrupoById = async (db: D1Database, idGrupo: number) =>
 				g.fecha_creacion,
 				g.id_administrador,
 				u.nombre || ' ' || u.apellido AS administrador_nombre,
+				COUNT(m.id_membresia) AS cantidad_integrantes,
 				COUNT(m.id_membresia) AS total_miembros
 			FROM grupo g
 			JOIN usuario u ON u.id_usuario = g.id_administrador
@@ -160,6 +165,51 @@ const selectGrupoById = async (db: D1Database, idGrupo: number) =>
 				u.apellido`
 		)
 		.bind(idGrupo)
+		.first();
+
+const selectInvitacionGrupoById = async (db: D1Database, idInvitacion: number) =>
+	db
+		.prepare(
+			`SELECT
+				i.id_invitacion_grupo,
+				i.estado,
+				i.fecha_envio,
+				i.fecha_respuesta,
+				i.id_grupo,
+				i.id_invitado,
+				i.id_invitador,
+				g.nombre,
+				g.descripcion,
+				g.categoria,
+				g.es_oficial,
+				g.estado_verificacion,
+				g.fecha_creacion,
+				g.id_administrador,
+				(inv.nombre || ' ' || inv.apellido) AS nombre_invitador,
+				COUNT(m.id_membresia) AS cantidad_integrantes,
+				COUNT(m.id_membresia) AS total_miembros
+			FROM invitacion_grupo i
+			JOIN grupo g
+				ON g.id_grupo = i.id_grupo
+			JOIN usuario inv
+				ON inv.id_usuario = i.id_invitador
+			LEFT JOIN membresia_grupo m
+				ON m.id_grupo = g.id_grupo
+				AND m.estado = 'ACTIVA'
+			WHERE i.id_invitacion_grupo = ?
+			GROUP BY
+				i.id_invitacion_grupo,
+				g.nombre,
+				g.descripcion,
+				g.categoria,
+				g.es_oficial,
+				g.estado_verificacion,
+				g.fecha_creacion,
+				g.id_administrador,
+				inv.nombre,
+				inv.apellido`
+		)
+		.bind(idInvitacion)
 		.first();
 
 export default {
@@ -205,6 +255,7 @@ export default {
 						g.fecha_creacion,
 						g.id_administrador,
 						u.nombre || ' ' || u.apellido AS administrador_nombre,
+						COUNT(m.id_membresia) AS cantidad_integrantes,
 						COUNT(m.id_membresia) AS total_miembros
 					FROM grupo g
 					JOIN usuario u ON u.id_usuario = g.id_administrador
@@ -577,6 +628,117 @@ export default {
 					{ status: 500 }
 				);
 			}
+		}
+
+		const invitacionesUsuarioMatch = url.pathname.match(/^\/usuarios\/(\d+)\/invitaciones-grupo$/);
+		if (request.method === "GET" && invitacionesUsuarioMatch) {
+			const idUsuario = Number.parseInt(invitacionesUsuarioMatch[1], 10);
+			const invitaciones = await env.unparche_db
+				.prepare(
+					`SELECT
+						i.id_invitacion_grupo,
+						i.estado,
+						i.fecha_envio,
+						i.fecha_respuesta,
+						i.id_grupo,
+						i.id_invitado,
+						i.id_invitador,
+						g.nombre,
+						g.descripcion,
+						g.categoria,
+						g.es_oficial,
+						g.estado_verificacion,
+						g.fecha_creacion,
+						g.id_administrador,
+						(inv.nombre || ' ' || inv.apellido) AS nombre_invitador,
+						COUNT(m.id_membresia) AS cantidad_integrantes,
+						COUNT(m.id_membresia) AS total_miembros
+					 FROM invitacion_grupo i
+					 JOIN grupo g
+						ON g.id_grupo = i.id_grupo
+					 JOIN usuario inv
+						ON inv.id_usuario = i.id_invitador
+					 LEFT JOIN membresia_grupo m
+						ON m.id_grupo = g.id_grupo
+						AND m.estado = 'ACTIVA'
+					 WHERE i.id_invitado = ?
+					 GROUP BY
+						i.id_invitacion_grupo,
+						g.nombre,
+						g.descripcion,
+						g.categoria,
+						g.es_oficial,
+						g.estado_verificacion,
+						g.fecha_creacion,
+						g.id_administrador,
+						inv.nombre,
+						inv.apellido
+					 ORDER BY i.fecha_envio DESC`
+				)
+				.bind(idUsuario)
+				.all();
+
+			return json({ ok: true, invitaciones: invitaciones.results });
+		}
+
+		const invitacionMatch = url.pathname.match(/^\/invitaciones-grupo\/(\d+)$/);
+		if (request.method === "PATCH" && invitacionMatch) {
+			const idInvitacion = Number.parseInt(invitacionMatch[1], 10);
+			let body: ActualizarInvitacionGrupoBody;
+
+			try {
+				body = await request.json();
+			} catch {
+				return json({ ok: false, error: "El body debe ser JSON valido." }, { status: 400 });
+			}
+
+			const estado = body.estado;
+			if (!estado || !["ACEPTADA", "RECHAZADA"].includes(estado)) {
+				return json({ ok: false, error: "estado debe ser ACEPTADA o RECHAZADA." }, { status: 400 });
+			}
+
+			const invitacionActual = await env.unparche_db
+				.prepare(
+					`SELECT id_invitacion_grupo, estado, id_grupo, id_invitado
+					 FROM invitacion_grupo
+					 WHERE id_invitacion_grupo = ?`
+				)
+				.bind(idInvitacion)
+				.first();
+
+			if (!invitacionActual) {
+				return json({ ok: false, error: "Invitacion no encontrada." }, { status: 404 });
+			}
+
+			if (invitacionActual.estado !== "PENDIENTE") {
+				return json({ ok: false, error: "La invitacion ya fue respondida." }, { status: 409 });
+			}
+
+			await env.unparche_db
+				.prepare(
+					`UPDATE invitacion_grupo
+					 SET estado = ?, fecha_respuesta = CURRENT_TIMESTAMP
+					 WHERE id_invitacion_grupo = ?`
+				)
+				.bind(estado, idInvitacion)
+				.run();
+
+			if (estado === "ACEPTADA") {
+				await env.unparche_db
+					.prepare(
+						`INSERT OR IGNORE INTO membresia_grupo (
+							id_usuario,
+							id_grupo,
+							rol_grupo,
+							estado
+						) VALUES (?, ?, 'MIEMBRO', 'ACTIVA')`
+					)
+					.bind(invitacionActual.id_invitado, invitacionActual.id_grupo)
+					.run();
+			}
+
+			const invitacion = await selectInvitacionGrupoById(env.unparche_db, idInvitacion);
+			return json({ ok: true, invitacion });
 		}
 
 
