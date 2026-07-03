@@ -76,6 +76,10 @@ class GroupApiClient {
     final responseBody = await response.transform(utf8.decoder).join();
     final decoded = responseBody.isEmpty ? null : jsonDecode(responseBody);
 
+    if (response.statusCode == 404) {
+      return const [];
+    }
+
     if (response.statusCode < 200 || response.statusCode >= 300) {
       final message = decoded is Map<String, dynamic>
           ? decoded['error']?.toString()
