@@ -1,5 +1,6 @@
 #pragma once
 #include <boost/asio.hpp>
+#include <boost/asio/streambuf.hpp>
 
 namespace asio = boost::asio;
 using tcp = asio::ip::tcp;
@@ -10,11 +11,12 @@ class User{
 private:
     tcp::socket socket;
     Chat* chat = nullptr;
+    asio::streambuf buffer;
     std::string nickname;
     bool isAuth;
-    void authenticate(std::string username, Chat* chat);
 
 public:
+    User(tcp::socket socket);
     void read();
     void sendMessage();
 };

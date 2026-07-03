@@ -8,11 +8,12 @@ namespace asio = boost::asio;
 using tcp = asio::ip::tcp;
 
 // Acceptor logic
-void do_accept(asio::io_context& io_context, tcp::acceptor& acceptor){
+void do_accept(asio::io_context& io_context, tcp::acceptor& acceptor, std::unordered_map<int, Chat*> chats){
 
     // async acceptor function that receives as a parameter a lambda function with a reference to the main loop and the
     // acceptor object, the lambda is executed with every new connection
-    acceptor.async_accept([&acceptor, &io_context](boost::system::error_code error, tcp::socket socket){
-
+    acceptor.async_accept([&acceptor, &io_context, &chats](boost::system::error_code error, tcp::socket socket){
+        User user(std::move(socket));
+        user.authenticate();
     });
 }
