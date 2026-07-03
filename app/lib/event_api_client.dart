@@ -89,15 +89,26 @@ class EventSummary {
     required this.latitude,
     required this.longitude,
     required this.visibility,
+    required this.organizerId,
+    required this.organizerName,
+    required this.organizerEmail,
+    required this.organizerCareer,
+    required this.organizerInfo,
     required this.groupId,
+    required this.groupName,
+    required this.groupDescription,
+    required this.groupCategory,
+    required this.groupIsOfficial,
+    required this.groupVerificationStatus,
     required this.eventTypeId,
+    required this.eventTypeName,
     required this.status,
   });
 
   factory EventSummary.fromJson(Map<String, dynamic> json) {
     return EventSummary(
       id: _toInt(json['id_evento']),
-      title: json['titulo']?.toString() ?? 'Evento',
+      title: json['titulo']?.toString() ?? '',
       description: json['descripcion']?.toString() ?? '',
       start: _toDateTime(json['fecha_inicio']),
       durationMinutes: _toInt(json['duracion_minutos']),
@@ -105,8 +116,19 @@ class EventSummary {
       latitude: _toDouble(json['latitud']),
       longitude: _toDouble(json['longitud']),
       visibility: json['visibilidad']?.toString() ?? 'PUBLICA',
+      organizerId: _toInt(json['id_organizador']),
+      organizerName: _cleanString(json['organizador_nombre']),
+      organizerEmail: _cleanString(json['organizador_correo']),
+      organizerCareer: _cleanString(json['organizador_carrera']),
+      organizerInfo: _cleanString(json['organizador_informacion']),
       groupId: _toInt(json['id_grupo']),
+      groupName: _cleanString(json['grupo_nombre']),
+      groupDescription: _cleanString(json['grupo_descripcion']),
+      groupCategory: _cleanString(json['grupo_categoria']),
+      groupIsOfficial: _toBool(json['grupo_es_oficial']),
+      groupVerificationStatus: _cleanString(json['grupo_estado_verificacion']),
       eventTypeId: _toInt(json['id_tipo_evento']),
+      eventTypeName: _cleanString(json['tipo_evento_nombre']),
       status: json['estado']?.toString() ?? 'PROGRAMADO',
     );
   }
@@ -120,15 +142,41 @@ class EventSummary {
   final double? latitude;
   final double? longitude;
   final String visibility;
+  final int? organizerId;
+  final String? organizerName;
+  final String? organizerEmail;
+  final String? organizerCareer;
+  final String? organizerInfo;
   final int? groupId;
+  final String? groupName;
+  final String? groupDescription;
+  final String? groupCategory;
+  final bool? groupIsOfficial;
+  final String? groupVerificationStatus;
   final int? eventTypeId;
+  final String? eventTypeName;
   final String status;
 
   bool get hasLocation => latitude != null && longitude != null;
   bool get isPublic => visibility == 'PUBLICA';
   bool get isActive => status == 'PROGRAMADO' || status == 'EN_CURSO';
+  bool get belongsToGroup => groupId != null;
+  bool get hasCompleteRequiredDetails =>
+      title.trim().isNotEmpty &&
+      description.trim().isNotEmpty &&
+      start != null &&
+      durationMinutes != null &&
+      durationMinutes! > 0 &&
+      hasLocation &&
+      organizerId != null &&
+      eventTypeId != null;
 
   String get eventTypeLabel {
+    final apiName = eventTypeName;
+    if (apiName != null && apiName.trim().isNotEmpty) {
+      return _titleCase(apiName);
+    }
+
     return switch (eventTypeId) {
       1 => 'Academico',
       2 => 'Cultural',
@@ -137,6 +185,30 @@ class EventSummary {
       5 => 'Otro',
       _ => 'Evento',
     };
+  }
+
+  String get organizerLabel {
+    final group = groupName;
+    if (belongsToGroup && group != null && group.trim().isNotEmpty) {
+      return group;
+    }
+
+    final organizer = organizerName;
+    if (organizer != null && organizer.trim().isNotEmpty) {
+      return organizer;
+    }
+
+    return 'Organizador no disponible';
+  }
+
+  String get locationLabel {
+    final lat = latitude;
+    final lng = longitude;
+    if (lat == null || lng == null) {
+      return 'Ubicacion no disponible';
+    }
+
+    return '${lat.toStringAsFixed(5)}, ${lng.toStringAsFixed(5)}';
   }
 
   bool isVisibleByDefault(DateTime now) {
@@ -185,6 +257,40 @@ class EventSummary {
 
     return DateTime.tryParse(value.trim()) ??
         DateTime.tryParse(value.trim().replaceFirst(' ', 'T'));
+  }
+
+  static String? _cleanString(Object? value) {
+    if (value == null) {
+      return null;
+    }
+
+    final text = value.toString().trim();
+    return text.isEmpty ? null : text;
+  }
+
+  static bool? _toBool(Object? value) {
+    if (value is bool) {
+      return value;
+    }
+
+    if (value is int) {
+      return value == 1;
+    }
+
+    if (value is double && value % 1 == 0) {
+      return value.toInt() == 1;
+    }
+
+    return null;
+  }
+
+  static String _titleCase(String value) {
+    final lower = value.trim().toLowerCase();
+    if (lower.isEmpty) {
+      return value;
+    }
+
+    return lower[0].toUpperCase() + lower.substring(1);
   }
 }
 

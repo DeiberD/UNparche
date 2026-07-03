@@ -660,6 +660,9 @@ class EventListTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final title = event.title.trim().isEmpty
+        ? 'Evento sin titulo'
+        : event.title;
     return Material(
       color: Colors.white.withAlpha(242),
       borderRadius: BorderRadius.circular(18),
@@ -699,7 +702,7 @@ class EventListTile extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      event.title,
+                      title,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
@@ -756,6 +759,9 @@ class EventDetailScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final title = event.title.trim().isEmpty
+        ? 'Evento sin titulo'
+        : event.title;
     return Scaffold(
       backgroundColor: EventsListView.background,
       appBar: AppBar(
@@ -780,6 +786,10 @@ class EventDetailScreen extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  if (!event.hasCompleteRequiredDetails) ...[
+                    const _IncompleteEventNotice(),
+                    const SizedBox(height: 14),
+                  ],
                   Row(
                     children: [
                       CircleAvatar(
@@ -805,7 +815,7 @@ class EventDetailScreen extends StatelessWidget {
                   ),
                   const SizedBox(height: 18),
                   Text(
-                    event.title,
+                    title,
                     style: const TextStyle(
                       color: EventsListView.ink,
                       fontSize: 26,
@@ -828,9 +838,19 @@ class EventDetailScreen extends StatelessWidget {
             ),
             const SizedBox(height: 18),
             _DetailInfoRow(
+              icon: Icons.category_outlined,
+              title: 'Tipo',
+              value: event.eventTypeLabel,
+            ),
+            _DetailInfoRow(
+              icon: Icons.calendar_today_outlined,
+              title: 'Fecha',
+              value: formatEventDate(event.start),
+            ),
+            _DetailInfoRow(
               icon: Icons.schedule,
-              title: 'Inicio',
-              value: formatEventStart(event.start),
+              title: 'Hora',
+              value: formatEventTime(event.start),
             ),
             _DetailInfoRow(
               icon: Icons.timer_outlined,
@@ -840,12 +860,17 @@ class EventDetailScreen extends StatelessWidget {
                   : '${event.durationMinutes} minutos',
             ),
             _DetailInfoRow(
-              icon: Icons.group_outlined,
-              title: 'Grupo organizador',
-              value: event.groupId == null
-                  ? 'Sin grupo'
-                  : 'Grupo ${event.groupId}',
+              icon: Icons.place_outlined,
+              title: 'Ubicacion',
+              value: event.locationLabel,
             ),
+            _DetailInfoRow(
+              icon: Icons.group_outlined,
+              title: 'Organizador',
+              value: event.organizerLabel,
+            ),
+            const SizedBox(height: 12),
+            _OrganizerCard(event: event),
             const SizedBox(height: 12),
             SizedBox(
               height: 54,
@@ -872,6 +897,230 @@ class EventDetailScreen extends StatelessWidget {
   }
 }
 
+class EventOrganizerDetailScreen extends StatelessWidget {
+  const EventOrganizerDetailScreen({super.key, required this.event});
+
+  final EventSummary event;
+
+  @override
+  Widget build(BuildContext context) {
+    final isGroup = event.belongsToGroup;
+    return Scaffold(
+      backgroundColor: EventsListView.background,
+      appBar: AppBar(
+        backgroundColor: EventsListView.background,
+        foregroundColor: EventsListView.ink,
+        title: Text(
+          isGroup ? 'Informacion del grupo' : 'Informacion del usuario',
+          style: const TextStyle(fontWeight: FontWeight.w800),
+        ),
+      ),
+      body: SafeArea(
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(18, 10, 18, 26),
+          children: [
+            Container(
+              padding: const EdgeInsets.all(18),
+              decoration: BoxDecoration(
+                color: EventsListView.surface,
+                borderRadius: BorderRadius.circular(18),
+                border: Border.all(color: EventsListView.ink.withAlpha(24)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  CircleAvatar(
+                    radius: 26,
+                    backgroundColor: _eventColor(
+                      event.eventTypeId,
+                    ).withAlpha(36),
+                    child: Icon(
+                      isGroup ? Icons.groups_outlined : Icons.person_outline,
+                      color: _eventColor(event.eventTypeId),
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  Text(
+                    isGroup
+                        ? event.groupName ?? 'Grupo sin nombre'
+                        : event.organizerName ?? 'Usuario sin nombre publico',
+                    style: const TextStyle(
+                      color: EventsListView.ink,
+                      fontSize: 24,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    isGroup ? _groupSubtitle(event) : _userSubtitle(event),
+                    style: TextStyle(
+                      color: EventsListView.ink.withAlpha(175),
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    isGroup
+                        ? event.groupDescription ??
+                              'Este grupo no tiene descripcion disponible.'
+                        : event.organizerInfo ??
+                              'Este usuario no tiene informacion publica adicional.',
+                    style: TextStyle(
+                      color: EventsListView.ink.withAlpha(190),
+                      fontSize: 14,
+                      height: 1.35,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 18),
+            if (isGroup) ...[
+              _DetailInfoRow(
+                icon: Icons.category_outlined,
+                title: 'Categoria',
+                value: _titleCaseOrFallback(
+                  event.groupCategory,
+                  'Sin categoria',
+                ),
+              ),
+              _DetailInfoRow(
+                icon: Icons.verified_outlined,
+                title: 'Estado',
+                value: event.groupIsOfficial == true ? 'Oficial' : 'No oficial',
+              ),
+              _DetailInfoRow(
+                icon: Icons.fact_check_outlined,
+                title: 'Verificacion',
+                value: _titleCaseOrFallback(
+                  event.groupVerificationStatus,
+                  'Sin verificar',
+                ),
+              ),
+            ] else ...[
+              _DetailInfoRow(
+                icon: Icons.badge_outlined,
+                title: 'Nombre',
+                value: event.organizerName ?? 'No disponible',
+              ),
+              _DetailInfoRow(
+                icon: Icons.school_outlined,
+                title: 'Carrera',
+                value: event.organizerCareer ?? 'No disponible',
+              ),
+              _DetailInfoRow(
+                icon: Icons.mail_outline,
+                title: 'Correo',
+                value: event.organizerEmail ?? 'No disponible',
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _OrganizerCard extends StatelessWidget {
+  const _OrganizerCard({required this.event});
+
+  final EventSummary event;
+
+  @override
+  Widget build(BuildContext context) {
+    final isGroup = event.belongsToGroup;
+    return Material(
+      color: Colors.white.withAlpha(238),
+      borderRadius: BorderRadius.circular(16),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: () => Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) => EventOrganizerDetailScreen(event: event),
+          ),
+        ),
+        child: Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: EventsListView.ink.withAlpha(18)),
+          ),
+          child: Row(
+            children: [
+              Icon(
+                isGroup ? Icons.groups_outlined : Icons.person_outline,
+                color: EventsListView.ink,
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      isGroup ? 'Grupo organizador' : 'Usuario organizador',
+                      style: TextStyle(
+                        color: EventsListView.ink.withAlpha(165),
+                        fontWeight: FontWeight.w700,
+                        fontSize: 12,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      event.organizerLabel,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: EventsListView.ink,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const Icon(Icons.chevron_right, color: EventsListView.ink),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _IncompleteEventNotice extends StatelessWidget {
+  const _IncompleteEventNotice();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFF4DD),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFFC27A00).withAlpha(80)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(Icons.info_outline, color: Color(0xFF7A4A00), size: 20),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              'Este evento tiene informacion incompleta. Algunos campos pueden aparecer como no disponibles.',
+              style: TextStyle(
+                color: EventsListView.ink.withAlpha(205),
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+                height: 1.3,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 String formatEventStart(DateTime? start) {
   if (start == null) {
     return 'Fecha por confirmar';
@@ -881,6 +1130,52 @@ String formatEventStart(DateTime? start) {
   final hour = localStart.hour.toString().padLeft(2, '0');
   final minute = localStart.minute.toString().padLeft(2, '0');
   return '${shortEventDate(localStart)}/${localStart.year} · $hour:$minute';
+}
+
+String formatEventDate(DateTime? start) {
+  if (start == null) {
+    return 'Fecha no disponible';
+  }
+
+  final localStart = start.toLocal();
+  return '${shortEventDate(localStart)}/${localStart.year}';
+}
+
+String formatEventTime(DateTime? start) {
+  if (start == null) {
+    return 'Hora no disponible';
+  }
+
+  final localStart = start.toLocal();
+  final hour = localStart.hour.toString().padLeft(2, '0');
+  final minute = localStart.minute.toString().padLeft(2, '0');
+  return '$hour:$minute';
+}
+
+String _groupSubtitle(EventSummary event) {
+  final parts = [
+    _titleCaseOrFallback(event.groupCategory, 'Categoria no disponible'),
+    event.groupIsOfficial == true ? 'Oficial' : 'No oficial',
+  ];
+  return parts.join(' · ');
+}
+
+String _userSubtitle(EventSummary event) {
+  return event.organizerCareer ?? event.organizerEmail ?? 'Usuario comunitario';
+}
+
+String _titleCaseOrFallback(String? value, String fallback) {
+  final text = value?.trim();
+  if (text == null || text.isEmpty) {
+    return fallback;
+  }
+
+  final lower = text.toLowerCase().replaceAll('_', ' ');
+  return lower
+      .split(' ')
+      .where((part) => part.isNotEmpty)
+      .map((part) => part[0].toUpperCase() + part.substring(1))
+      .join(' ');
 }
 
 String _calendarTitle(DateTime date) {
@@ -971,20 +1266,25 @@ class _DetailInfoRow extends StatelessWidget {
           Icon(icon, color: EventsListView.ink, size: 20),
           const SizedBox(width: 12),
           Expanded(
-            child: Text(
-              title,
-              style: TextStyle(
-                color: EventsListView.ink.withAlpha(170),
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-          ),
-          Text(
-            value,
-            textAlign: TextAlign.right,
-            style: const TextStyle(
-              color: EventsListView.ink,
-              fontWeight: FontWeight.w800,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: TextStyle(
+                    color: EventsListView.ink.withAlpha(170),
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  value,
+                  style: const TextStyle(
+                    color: EventsListView.ink,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ],
             ),
           ),
         ],

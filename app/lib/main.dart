@@ -183,8 +183,19 @@ class _CampusMapScreenState extends State<CampusMapScreen> {
       latitude: event.latitude,
       longitude: event.longitude,
       visibility: event.apiVisibility,
+      organizerId: 1,
+      organizerName: 'Usuario comunitario',
+      organizerEmail: null,
+      organizerCareer: null,
+      organizerInfo: null,
       groupId: null,
+      groupName: null,
+      groupDescription: null,
+      groupCategory: null,
+      groupIsOfficial: null,
+      groupVerificationStatus: null,
       eventTypeId: event.eventTypeId,
+      eventTypeName: null,
       status: 'PROGRAMADO',
     );
     setState(() {
@@ -374,6 +385,7 @@ class _CampusMapScreenState extends State<CampusMapScreen> {
                       : UNALMap(
                           events: filteredEvents,
                           focusedEvent: _focusedEvent,
+                          onEventTap: _openEventDetails,
                         ),
                 _HomeTab.events => EventsListView(
                   events: filteredEvents,
@@ -470,9 +482,15 @@ class _CampusMapScreenState extends State<CampusMapScreen> {
 }
 
 class UNALMap extends StatefulWidget {
-  const UNALMap({super.key, required this.events, this.focusedEvent});
+  const UNALMap({
+    super.key,
+    required this.events,
+    required this.onEventTap,
+    this.focusedEvent,
+  });
 
   final List<EventSummary> events;
+  final ValueChanged<EventSummary> onEventTap;
   final EventSummary? focusedEvent;
 
   @override
@@ -482,6 +500,8 @@ class UNALMap extends StatefulWidget {
 class _UNALMapState extends State<UNALMap> {
   MapboxMap? _mapboxMap;
   CircleAnnotationManager? _eventMarkerManager;
+  final Map<String, EventSummary> _eventsByAnnotationId = {};
+  dynamic _eventMarkerTapSubscription;
   String? _statusMessage = 'Cargando mapa...';
   bool _hasError = false;
 
@@ -506,7 +526,16 @@ class _UNALMapState extends State<UNALMap> {
 
     _eventMarkerManager = await mapboxMap.annotations
         .createCircleAnnotationManager();
+    _eventMarkerTapSubscription = _eventMarkerManager?.tapEvents(
+      onTap: _handleMarkerTap,
+    );
     await _syncEventMarkers();
+  }
+
+  @override
+  void dispose() {
+    _eventMarkerTapSubscription?.cancel();
+    super.dispose();
   }
 
   @override
@@ -526,6 +555,7 @@ class _UNALMapState extends State<UNALMap> {
     }
 
     await manager.deleteAll();
+    _eventsByAnnotationId.clear();
     for (final event in widget.events) {
       final latitude = event.latitude;
       final longitude = event.longitude;
@@ -533,7 +563,7 @@ class _UNALMapState extends State<UNALMap> {
         continue;
       }
 
-      await manager.create(
+      final annotation = await manager.create(
         CircleAnnotationOptions(
           geometry: Point(coordinates: Position(longitude, latitude)),
           circleRadius: 8,
@@ -542,6 +572,7 @@ class _UNALMapState extends State<UNALMap> {
           circleStrokeWidth: 3,
         ),
       );
+      _eventsByAnnotationId[annotation.id] = event;
     }
 
     final latest = widget.focusedEvent ?? widget.events.lastOrNull;
@@ -554,6 +585,13 @@ class _UNALMapState extends State<UNALMap> {
           zoom: 16.5,
         ),
       );
+    }
+  }
+
+  void _handleMarkerTap(CircleAnnotation annotation) {
+    final event = _eventsByAnnotationId[annotation.id];
+    if (event != null) {
+      widget.onEventTap(event);
     }
   }
 
