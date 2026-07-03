@@ -100,6 +100,7 @@ class _CampusMapScreenState extends State<CampusMapScreen> {
   List<EventSummary> _allEvents = [];
   _HomeTab _selectedTab = _HomeTab.map;
   EventFilters _filters = const EventFilters();
+  EventTimeScope _eventTimeScope = EventTimeScope.future;
   EventSummary? _focusedEvent;
   bool _isLoadingEvents = false;
   String? _eventsError;
@@ -202,14 +203,22 @@ class _CampusMapScreenState extends State<CampusMapScreen> {
   }
 
   List<EventSummary> get _filteredEvents {
+    return _eventsMatchingFilters(includeDate: true);
+  }
+
+  List<EventSummary> get _eventsForCalendar {
+    return _eventsMatchingFilters(includeDate: false);
+  }
+
+  List<EventSummary> _eventsMatchingFilters({required bool includeDate}) {
     final now = DateTime.now();
     return _allEvents.where((event) {
-      if (!event.isVisibleByDefault(now)) {
+      if (!_matchesTimeScope(event, now)) {
         return false;
       }
 
       final date = _filters.date;
-      if (date != null) {
+      if (includeDate && date != null) {
         final start = event.start;
         if (start == null || !DateUtils.isSameDay(start.toLocal(), date)) {
           return false;
@@ -230,6 +239,26 @@ class _CampusMapScreenState extends State<CampusMapScreen> {
     }).toList();
   }
 
+  bool _matchesTimeScope(EventSummary event, DateTime now) {
+    final eventStart = event.start;
+    if (!event.isPublic || eventStart == null) {
+      return false;
+    }
+
+    final eventDate = DateUtils.dateOnly(eventStart.toLocal());
+    final today = DateUtils.dateOnly(now);
+    final next7Days = DateUtils.dateOnly(now.add(const Duration(days: 7)));
+
+    return switch (_eventTimeScope) {
+      EventTimeScope.future =>
+        event.isActive &&
+            !eventDate.isBefore(today) &&
+            !eventDate.isAfter(next7Days),
+      EventTimeScope.past =>
+        event.status != 'CANCELADO' && eventDate.isBefore(today),
+    };
+  }
+
   List<int> get _availableGroupIds {
     final groupIds =
         _allEvents
@@ -243,11 +272,31 @@ class _CampusMapScreenState extends State<CampusMapScreen> {
 
   Future<void> _pickDateFilter() async {
     final now = DateTime.now();
+    final firstDate = _eventTimeScope == EventTimeScope.past
+        ? DateTime(now.year - 5)
+        : DateTime(now.year, now.month, now.day);
+    final lastDate = _eventTimeScope == EventTimeScope.past
+        ? DateTime(
+            now.year,
+            now.month,
+            now.day,
+          ).subtract(const Duration(days: 1))
+        : DateTime(now.year, now.month, now.day).add(const Duration(days: 7));
+    final selectedDate = _filters.date;
+    final defaultDate = _eventTimeScope == EventTimeScope.past
+        ? lastDate
+        : firstDate;
+    final initialDate =
+        selectedDate != null &&
+            !selectedDate.isBefore(firstDate) &&
+            !selectedDate.isAfter(lastDate)
+        ? selectedDate
+        : defaultDate;
     final picked = await showDatePicker(
       context: context,
-      initialDate: _filters.date ?? now,
-      firstDate: DateTime(now.year, now.month, now.day),
-      lastDate: now.add(const Duration(days: 7)),
+      initialDate: initialDate,
+      firstDate: firstDate,
+      lastDate: lastDate,
     );
 
     if (picked != null) {
@@ -328,10 +377,26 @@ class _CampusMapScreenState extends State<CampusMapScreen> {
                         ),
                 _HomeTab.events => EventsListView(
                   events: filteredEvents,
+                  calendarEvents: _eventsForCalendar,
+                  selectedDate: _filters.date,
+                  timeScope: _eventTimeScope,
                   isLoading: _isLoadingEvents,
                   errorMessage: _eventsError,
                   onRefresh: _loadVisibleEvents,
                   onEventTap: _openEventDetails,
+                  onDateSelected: (date) {
+                    setState(() {
+                      _filters = date == null
+                          ? _filters.copyWith(clearDate: true)
+                          : _filters.copyWith(date: date);
+                    });
+                  },
+                  onTimeScopeChanged: (scope) {
+                    setState(() {
+                      _eventTimeScope = scope;
+                      _filters = _filters.copyWith(clearDate: true);
+                    });
+                  },
                 ),
                 _HomeTab.groups => const GroupsScreen(),
               },

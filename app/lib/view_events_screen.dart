@@ -2,25 +2,38 @@ import 'package:flutter/material.dart';
 
 import 'event_api_client.dart';
 
+enum EventTimeScope { future, past }
+
 class EventsListView extends StatelessWidget {
   const EventsListView({
     super.key,
     required this.events,
+    required this.calendarEvents,
+    required this.selectedDate,
+    required this.timeScope,
     required this.isLoading,
     required this.errorMessage,
     required this.onRefresh,
     required this.onEventTap,
+    required this.onDateSelected,
+    required this.onTimeScopeChanged,
   });
 
   static const background = Color(0xFFFBF5F2);
   static const surface = Color(0xFFF3ECE8);
   static const ink = Color(0xFF263020);
+  static const accent = Color(0xFFEEDDF0);
 
   final List<EventSummary> events;
+  final List<EventSummary> calendarEvents;
+  final DateTime? selectedDate;
+  final EventTimeScope timeScope;
   final bool isLoading;
   final String? errorMessage;
   final Future<void> Function() onRefresh;
   final ValueChanged<EventSummary> onEventTap;
+  final ValueChanged<DateTime?> onDateSelected;
+  final ValueChanged<EventTimeScope> onTimeScopeChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -50,6 +63,14 @@ class EventsListView extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 16),
+            _EventCalendarStrip(
+              events: calendarEvents,
+              selectedDate: selectedDate,
+              timeScope: timeScope,
+              onDateSelected: onDateSelected,
+              onTimeScopeChanged: onTimeScopeChanged,
+            ),
+            const SizedBox(height: 16),
             if (errorMessage != null)
               _ListStateMessage(
                 icon: Icons.error_outline,
@@ -57,10 +78,14 @@ class EventsListView extends StatelessWidget {
                 message: errorMessage!,
               )
             else if (!isLoading && events.isEmpty)
-              const _ListStateMessage(
+              _ListStateMessage(
                 icon: Icons.event_busy_outlined,
-                title: 'No hay eventos disponibles',
-                message: 'Cuando existan eventos publicos, apareceran aqui.',
+                title: selectedDate == null
+                    ? 'No hay eventos disponibles'
+                    : 'No hay eventos este dia',
+                message: selectedDate == null
+                    ? 'Cuando existan eventos publicos, apareceran aqui.'
+                    : 'Selecciona otro dia o limpia el filtro de fecha.',
               )
             else
               ...events.map(
@@ -73,6 +98,554 @@ class EventsListView extends StatelessWidget {
                 ),
               ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class _EventCalendarStrip extends StatefulWidget {
+  const _EventCalendarStrip({
+    required this.events,
+    required this.selectedDate,
+    required this.timeScope,
+    required this.onDateSelected,
+    required this.onTimeScopeChanged,
+  });
+
+  final List<EventSummary> events;
+  final DateTime? selectedDate;
+  final EventTimeScope timeScope;
+  final ValueChanged<DateTime?> onDateSelected;
+  final ValueChanged<EventTimeScope> onTimeScopeChanged;
+
+  @override
+  State<_EventCalendarStrip> createState() => _EventCalendarStripState();
+}
+
+class _EventCalendarStripState extends State<_EventCalendarStrip> {
+  late DateTime _visibleMonth;
+
+  @override
+  void initState() {
+    super.initState();
+    final baseDate = widget.selectedDate ?? DateTime.now();
+    _visibleMonth = DateTime(baseDate.year, baseDate.month);
+  }
+
+  @override
+  void didUpdateWidget(covariant _EventCalendarStrip oldWidget) {
+    super.didUpdateWidget(oldWidget);
+
+    final selectedDate = widget.selectedDate;
+    if (selectedDate != null && !_isSameMonth(selectedDate, _visibleMonth)) {
+      _visibleMonth = DateTime(selectedDate.year, selectedDate.month);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(14, 14, 14, 14),
+      decoration: BoxDecoration(
+        color: EventsListView.surface,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: EventsListView.ink.withAlpha(22)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(
+                Icons.calendar_month_outlined,
+                color: EventsListView.ink,
+                size: 20,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  widget.timeScope == EventTimeScope.future
+                      ? 'Proximos 7 dias'
+                      : _calendarTitle(_visibleMonth),
+                  style: const TextStyle(
+                    color: EventsListView.ink,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+              if (widget.timeScope == EventTimeScope.past) ...[
+                IconButton(
+                  tooltip: 'Mes anterior',
+                  onPressed: () => _changeMonth(-1),
+                  icon: const Icon(Icons.chevron_left),
+                  color: EventsListView.ink,
+                ),
+                IconButton(
+                  tooltip: 'Mes siguiente',
+                  onPressed: _canGoToNextPastMonth()
+                      ? () => _changeMonth(1)
+                      : null,
+                  icon: const Icon(Icons.chevron_right),
+                  color: EventsListView.ink,
+                ),
+              ],
+            ],
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: _ScopeButton(
+                  label: 'Futuros',
+                  icon: Icons.upcoming_outlined,
+                  selected: widget.timeScope == EventTimeScope.future,
+                  onTap: () => widget.onTimeScopeChanged(EventTimeScope.future),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: _ScopeButton(
+                  label: 'Pasados',
+                  icon: Icons.history,
+                  selected: widget.timeScope == EventTimeScope.past,
+                  onTap: () => widget.onTimeScopeChanged(EventTimeScope.past),
+                ),
+              ),
+              const SizedBox(width: 8),
+              IconButton.filledTonal(
+                tooltip: 'Limpiar fecha',
+                onPressed: widget.selectedDate == null
+                    ? null
+                    : () => widget.onDateSelected(null),
+                icon: const Icon(Icons.close),
+                color: EventsListView.ink,
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          widget.timeScope == EventTimeScope.future
+              ? _FutureDaysStrip(
+                  events: widget.events,
+                  selectedDate: widget.selectedDate,
+                  onDateSelected: widget.onDateSelected,
+                )
+              : _PastMonthCalendar(
+                  events: widget.events,
+                  selectedDate: widget.selectedDate,
+                  visibleMonth: _visibleMonth,
+                  onDateSelected: widget.onDateSelected,
+                ),
+        ],
+      ),
+    );
+  }
+
+  void _changeMonth(int offset) {
+    setState(() {
+      _visibleMonth = DateTime(
+        _visibleMonth.year,
+        _visibleMonth.month + offset,
+      );
+    });
+  }
+
+  bool _canGoToNextPastMonth() {
+    final now = DateTime.now();
+    final currentMonth = DateTime(now.year, now.month);
+    final nextMonth = DateTime(_visibleMonth.year, _visibleMonth.month + 1);
+    return nextMonth.isBefore(currentMonth) ||
+        _isSameMonth(nextMonth, currentMonth);
+  }
+
+  static bool _isSameMonth(DateTime a, DateTime b) {
+    return a.year == b.year && a.month == b.month;
+  }
+}
+
+class _FutureDaysStrip extends StatelessWidget {
+  const _FutureDaysStrip({
+    required this.events,
+    required this.selectedDate,
+    required this.onDateSelected,
+  });
+
+  final List<EventSummary> events;
+  final DateTime? selectedDate;
+  final ValueChanged<DateTime?> onDateSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    final today = DateUtils.dateOnly(DateTime.now());
+    final days = List.generate(8, (index) {
+      return DateUtils.dateOnly(today.add(Duration(days: index)));
+    });
+
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Row(
+        children: days.map((day) {
+          final isSelected =
+              selectedDate != null && DateUtils.isSameDay(selectedDate, day);
+          final isToday = DateUtils.isSameDay(day, today);
+          final count = _eventCountForDay(events, day);
+          return Padding(
+            padding: const EdgeInsets.only(right: 8),
+            child: _FutureDayButton(
+              date: day,
+              eventCount: count,
+              isSelected: isSelected,
+              isToday: isToday,
+              onTap: () => onDateSelected(day),
+            ),
+          );
+        }).toList(),
+      ),
+    );
+  }
+}
+
+class _PastMonthCalendar extends StatelessWidget {
+  const _PastMonthCalendar({
+    required this.events,
+    required this.selectedDate,
+    required this.visibleMonth,
+    required this.onDateSelected,
+  });
+
+  final List<EventSummary> events;
+  final DateTime? selectedDate;
+  final DateTime visibleMonth;
+  final ValueChanged<DateTime?> onDateSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    final days = _monthCells(visibleMonth);
+    final today = DateUtils.dateOnly(DateTime.now());
+
+    return Column(
+      children: [
+        Row(
+          children: const [
+            _WeekdayHeader('L'),
+            _WeekdayHeader('M'),
+            _WeekdayHeader('M'),
+            _WeekdayHeader('J'),
+            _WeekdayHeader('V'),
+            _WeekdayHeader('S'),
+            _WeekdayHeader('D'),
+          ],
+        ),
+        const SizedBox(height: 6),
+        GridView.builder(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          itemCount: days.length,
+          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: 7,
+            mainAxisSpacing: 6,
+            crossAxisSpacing: 6,
+            childAspectRatio: 0.78,
+          ),
+          itemBuilder: (context, index) {
+            final day = days[index];
+            if (day == null) {
+              return const SizedBox.shrink();
+            }
+
+            final dayOnly = DateUtils.dateOnly(day);
+            final isSelectable = dayOnly.isBefore(today);
+            final isSelected =
+                selectedDate != null && DateUtils.isSameDay(selectedDate, day);
+            final count = _eventCountForDay(events, day);
+            return _CalendarDayButton(
+              date: day,
+              eventCount: count,
+              isSelected: isSelected,
+              isToday: false,
+              isEnabled: isSelectable,
+              onTap: isSelectable ? () => onDateSelected(day) : null,
+            );
+          },
+        ),
+      ],
+    );
+  }
+
+  static List<DateTime?> _monthCells(DateTime month) {
+    final firstDay = DateTime(month.year, month.month);
+    final daysInMonth = DateUtils.getDaysInMonth(month.year, month.month);
+    final leadingBlanks = firstDay.weekday - DateTime.monday;
+    final cells = <DateTime?>[
+      for (var index = 0; index < leadingBlanks; index++) null,
+      for (var day = 1; day <= daysInMonth; day++)
+        DateTime(month.year, month.month, day),
+    ];
+
+    while (cells.length % 7 != 0) {
+      cells.add(null);
+    }
+
+    return cells;
+  }
+}
+
+int _eventCountForDay(List<EventSummary> events, DateTime day) {
+  return events.where((event) {
+    final start = event.start;
+    return start != null && DateUtils.isSameDay(start.toLocal(), day);
+  }).length;
+}
+
+class _ScopeButton extends StatelessWidget {
+  const _ScopeButton({
+    required this.label,
+    required this.icon,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String label;
+  final IconData icon;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: selected ? EventsListView.ink : Colors.white.withAlpha(236),
+      borderRadius: BorderRadius.circular(14),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(14),
+        onTap: onTap,
+        child: Container(
+          height: 42,
+          padding: const EdgeInsets.symmetric(horizontal: 10),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+              color: selected
+                  ? EventsListView.ink
+                  : EventsListView.ink.withAlpha(22),
+            ),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                icon,
+                size: 16,
+                color: selected ? Colors.white : EventsListView.ink,
+              ),
+              const SizedBox(width: 6),
+              Flexible(
+                child: Text(
+                  label,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: selected ? Colors.white : EventsListView.ink,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _WeekdayHeader extends StatelessWidget {
+  const _WeekdayHeader(this.label);
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Expanded(
+      child: Text(
+        label,
+        textAlign: TextAlign.center,
+        style: TextStyle(
+          color: EventsListView.ink.withAlpha(150),
+          fontSize: 11,
+          fontWeight: FontWeight.w900,
+        ),
+      ),
+    );
+  }
+}
+
+class _FutureDayButton extends StatelessWidget {
+  const _FutureDayButton({
+    required this.date,
+    required this.eventCount,
+    required this.isSelected,
+    required this.isToday,
+    required this.onTap,
+  });
+
+  final DateTime date;
+  final int eventCount;
+  final bool isSelected;
+  final bool isToday;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final hasEvents = eventCount > 0;
+    return Material(
+      color: isSelected ? EventsListView.ink : Colors.white.withAlpha(236),
+      borderRadius: BorderRadius.circular(16),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: onTap,
+        child: Container(
+          width: 66,
+          height: 98,
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 9),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(
+              color: isSelected
+                  ? EventsListView.ink
+                  : isToday
+                  ? EventsListView.ink.withAlpha(80)
+                  : EventsListView.ink.withAlpha(hasEvents ? 36 : 18),
+            ),
+          ),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                _weekdayLabel(date),
+                style: TextStyle(
+                  color: isSelected
+                      ? Colors.white.withAlpha(220)
+                      : EventsListView.ink.withAlpha(150),
+                  fontSize: 10,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              Text(
+                date.day.toString(),
+                style: TextStyle(
+                  color: isSelected ? Colors.white : EventsListView.ink,
+                  fontSize: 23,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              Container(
+                constraints: const BoxConstraints(minWidth: 24),
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                decoration: BoxDecoration(
+                  color: isSelected
+                      ? Colors.white.withAlpha(34)
+                      : hasEvents
+                      ? EventsListView.accent
+                      : EventsListView.ink.withAlpha(10),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Text(
+                  '$eventCount',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: isSelected ? Colors.white : EventsListView.ink,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _CalendarDayButton extends StatelessWidget {
+  const _CalendarDayButton({
+    required this.date,
+    required this.eventCount,
+    required this.isSelected,
+    required this.isToday,
+    required this.isEnabled,
+    required this.onTap,
+  });
+
+  final DateTime date;
+  final int eventCount;
+  final bool isSelected;
+  final bool isToday;
+  final bool isEnabled;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final hasEvents = eventCount > 0;
+    final ink = isEnabled
+        ? EventsListView.ink
+        : EventsListView.ink.withAlpha(86);
+    return Material(
+      color: isSelected
+          ? EventsListView.ink
+          : isEnabled
+          ? Colors.white.withAlpha(236)
+          : EventsListView.ink.withAlpha(10),
+      borderRadius: BorderRadius.circular(16),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 5),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+              color: isSelected
+                  ? EventsListView.ink
+                  : isToday
+                  ? EventsListView.ink.withAlpha(80)
+                  : EventsListView.ink.withAlpha(hasEvents ? 36 : 18),
+            ),
+          ),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                date.day.toString(),
+                style: TextStyle(
+                  color: isSelected ? Colors.white : ink,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              Container(
+                constraints: const BoxConstraints(minWidth: 20),
+                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                decoration: BoxDecoration(
+                  color: isSelected
+                      ? Colors.white.withAlpha(34)
+                      : hasEvents && isEnabled
+                      ? EventsListView.accent
+                      : EventsListView.ink.withAlpha(10),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Text(
+                  '$eventCount',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: isSelected ? Colors.white : ink,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -308,6 +881,41 @@ String formatEventStart(DateTime? start) {
   final hour = localStart.hour.toString().padLeft(2, '0');
   final minute = localStart.minute.toString().padLeft(2, '0');
   return '${shortEventDate(localStart)}/${localStart.year} · $hour:$minute';
+}
+
+String _calendarTitle(DateTime date) {
+  return '${_monthLabel(date.month)} ${date.year}';
+}
+
+String _monthLabel(int month) {
+  return switch (month) {
+    1 => 'Enero',
+    2 => 'Febrero',
+    3 => 'Marzo',
+    4 => 'Abril',
+    5 => 'Mayo',
+    6 => 'Junio',
+    7 => 'Julio',
+    8 => 'Agosto',
+    9 => 'Septiembre',
+    10 => 'Octubre',
+    11 => 'Noviembre',
+    12 => 'Diciembre',
+    _ => '',
+  };
+}
+
+String _weekdayLabel(DateTime date) {
+  return switch (date.weekday) {
+    DateTime.monday => 'Lun',
+    DateTime.tuesday => 'Mar',
+    DateTime.wednesday => 'Mie',
+    DateTime.thursday => 'Jue',
+    DateTime.friday => 'Vie',
+    DateTime.saturday => 'Sab',
+    DateTime.sunday => 'Dom',
+    _ => '',
+  };
 }
 
 String shortEventDate(DateTime date) {
