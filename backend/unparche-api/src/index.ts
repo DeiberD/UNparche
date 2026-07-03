@@ -16,6 +16,11 @@ type CrearEventoBody = {
 	chat_habilitado?: boolean;
 };
 
+type CrearAsistenciaBody = {
+	id_usuario?: number;
+	estado?: "CONFIRMADA" | "CANCELADA";
+};
+
 const corsHeaders = {
 	"Access-Control-Allow-Origin": "*",
 	"Access-Control-Allow-Methods": "GET, POST, OPTIONS",
@@ -106,6 +111,21 @@ export default {
 			return json({ ok: true, message: "UNparche API" });
 		}
 
+		if (request.method === "GET" && url.pathname === "/tipos-evento") {
+			const tiposEvento = await env.unparche_db
+				.prepare(
+					`SELECT
+						id_tipo_evento,
+						nombre,
+						icono_svg
+					 FROM tipo_evento
+					 ORDER BY id_tipo_evento ASC`
+				)
+				.all();
+
+			return json({ ok: true, tipos_evento: tiposEvento.results });
+		}
+
 		if (request.method === "GET" && url.pathname === "/grupos") {
 			const grupos = await env.unparche_db
 				.prepare(
@@ -141,6 +161,171 @@ export default {
 				.all();
 
 			return json({ ok: true, grupos: grupos.results });
+		}
+
+		const grupoMatch = url.pathname.match(/^\/grupos\/(\d+)$/);
+
+		if (request.method === "GET" && grupoMatch) {
+			const idGrupo = Number(grupoMatch[1]);
+			const grupo = await env.unparche_db
+				.prepare(
+					`SELECT
+						g.id_grupo,
+						g.nombre,
+						g.descripcion,
+						g.categoria,
+						g.es_oficial,
+						g.estado_verificacion,
+						g.fecha_creacion,
+						g.id_administrador,
+						u.nombre || ' ' || u.apellido AS administrador_nombre,
+						COUNT(m.id_membresia) AS total_miembros
+					 FROM grupo g
+					 JOIN usuario u ON u.id_usuario = g.id_administrador
+					 LEFT JOIN membresia_grupo m
+						ON m.id_grupo = g.id_grupo
+						AND m.estado = 'ACTIVA'
+					 WHERE g.id_grupo = ?
+					 GROUP BY
+						g.id_grupo,
+						g.nombre,
+						g.descripcion,
+						g.categoria,
+						g.es_oficial,
+						g.estado_verificacion,
+						g.fecha_creacion,
+						g.id_administrador,
+						u.nombre,
+						u.apellido`
+				)
+				.bind(idGrupo)
+				.first();
+
+			if (!grupo) {
+				return json({ ok: false, error: "Grupo no encontrado." }, { status: 404 });
+			}
+
+			return json({ ok: true, grupo });
+		}
+
+		const eventoMatch = url.pathname.match(/^\/eventos\/(\d+)$/);
+
+		if (request.method === "GET" && eventoMatch) {
+			const idEvento = Number(eventoMatch[1]);
+			const evento = await env.unparche_db
+				.prepare(
+					`SELECT
+						e.id_evento,
+						e.titulo,
+						e.descripcion,
+						e.fecha_inicio,
+						e.duracion_minutos,
+						e.fecha_fin,
+						e.fecha_publicacion,
+						e.fecha_eliminacion,
+						e.latitud,
+						e.longitud,
+						e.visibilidad,
+						e.chat_habilitado,
+						e.estado,
+						e.id_organizador,
+						u.nombre || ' ' || u.apellido AS organizador_nombre,
+						e.id_grupo,
+						g.nombre AS grupo_nombre,
+						e.id_tipo_evento,
+						t.nombre AS tipo_evento_nombre,
+						t.icono_svg AS tipo_evento_icono
+					 FROM evento e
+					 JOIN usuario u ON u.id_usuario = e.id_organizador
+					 JOIN tipo_evento t ON t.id_tipo_evento = e.id_tipo_evento
+					 LEFT JOIN grupo g ON g.id_grupo = e.id_grupo
+					 WHERE e.id_evento = ?
+					 AND e.fecha_eliminacion IS NULL`
+				)
+				.bind(idEvento)
+				.first();
+
+			if (!evento) {
+				return json({ ok: false, error: "Evento no encontrado." }, { status: 404 });
+			}
+
+			return json({ ok: true, evento });
+		}
+
+		const asistenciaEventoMatch = url.pathname.match(/^\/eventos\/(\d+)\/asistencias$/);
+
+		if (request.method === "POST" && asistenciaEventoMatch) {
+			const idEvento = Number(asistenciaEventoMatch[1]);
+			let body: CrearAsistenciaBody;
+
+			try {
+				body = await request.json();
+			} catch {
+				return json({ ok: false, error: "El body debe ser JSON valido." }, { status: 400 });
+			}
+
+			const idUsuario = toInteger(body.id_usuario);
+			const estado = body.estado ?? "CONFIRMADA";
+
+			if (idUsuario === null) {
+				return json({ ok: false, error: "id_usuario es obligatorio y debe ser entero." }, { status: 400 });
+			}
+
+			if (!["CONFIRMADA", "CANCELADA"].includes(estado)) {
+				return json({ ok: false, error: "estado debe ser CONFIRMADA o CANCELADA." }, { status: 400 });
+			}
+
+			try {
+				await env.unparche_db
+					.prepare(
+						`INSERT INTO asistencia (
+							id_usuario,
+							id_evento,
+							estado
+						) VALUES (?, ?, ?)
+						ON CONFLICT(id_usuario, id_evento)
+						DO UPDATE SET estado = excluded.estado`
+					)
+					.bind(idUsuario, idEvento, estado)
+					.run();
+
+				const asistencia = await env.unparche_db
+					.prepare(
+						`SELECT
+							a.id_asistencia,
+							a.id_usuario,
+							u.nombre || ' ' || u.apellido AS usuario_nombre,
+							a.id_evento,
+							e.titulo AS evento_titulo,
+							a.estado,
+							a.notificaciones_activas,
+							a.fecha_confirmacion
+						 FROM asistencia a
+						 JOIN usuario u ON u.id_usuario = a.id_usuario
+						 JOIN evento e ON e.id_evento = a.id_evento
+						 WHERE a.id_usuario = ?
+						 AND a.id_evento = ?`
+					)
+					.bind(idUsuario, idEvento)
+					.first();
+
+				return json(
+					{
+						ok: true,
+						message: "Asistencia registrada correctamente.",
+						asistencia,
+					},
+					{ status: 201 }
+				);
+			} catch (error) {
+				const message = error instanceof Error ? error.message : String(error);
+
+				if (message.toLowerCase().includes("foreign key constraint failed")) {
+					return json({ ok: false, error: "El evento o el usuario no existe." }, { status: 400 });
+				}
+
+				return json({ ok: false, error: "No se pudo registrar la asistencia." }, { status: 500 });
+			}
 		}
 
 		if (request.method === "GET" && url.pathname === "/eventos") {
