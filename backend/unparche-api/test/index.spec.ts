@@ -113,6 +113,72 @@ describe("UNparche API worker", () => {
 		await expect(response.json()).resolves.toEqual({ ok: true, grupo });
 	});
 
+	it("creates a group and administrator membership", async () => {
+		const grupo = {
+			id_grupo: 2,
+			nombre: "Programacion Competitiva",
+			descripcion: "Entrenamientos y retos de programacion",
+			categoria: "ACADEMICO",
+			es_oficial: 0,
+			estado_verificacion: "NO_SOLICITADO",
+			fecha_creacion: "2026-07-02 21:10:00",
+			id_administrador: 1,
+			administrador_nombre: "Daniel Lopez",
+			total_miembros: 1,
+		};
+		let prepareCall = 0;
+		const request = new IncomingRequest("http://example.com/grupos", {
+			method: "POST",
+			body: JSON.stringify({
+				nombre: "Programacion Competitiva",
+				descripcion: "Entrenamientos y retos de programacion",
+				categoria: "ACADEMICO",
+				id_administrador: 1,
+			}),
+			headers: { "Content-Type": "application/json" },
+		});
+		const ctx = createExecutionContext();
+		const testEnv = {
+			unparche_db: {
+				prepare: () => {
+					prepareCall += 1;
+
+					if (prepareCall === 1) {
+						return {
+							bind: () => ({
+								run: async () => ({ meta: { last_row_id: 2 } }),
+							}),
+						};
+					}
+
+					if (prepareCall === 2) {
+						return {
+							bind: () => ({
+								run: async () => ({ success: true }),
+							}),
+						};
+					}
+
+					return {
+						bind: () => ({
+							first: async () => grupo,
+						}),
+					};
+				},
+			} as unknown as D1Database,
+		} as Env & { unparche_db: D1Database };
+
+		const response = await worker.fetch(request, testEnv, ctx);
+		await waitOnExecutionContext(ctx);
+
+		expect(response.status).toBe(201);
+		await expect(response.json()).resolves.toEqual({
+			ok: true,
+			message: "Grupo creado correctamente.",
+			grupo,
+		});
+	});
+
 	it("gets an event by id", async () => {
 		const evento = {
 			id_evento: 1,

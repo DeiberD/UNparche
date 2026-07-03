@@ -21,6 +21,14 @@ type CrearAsistenciaBody = {
 	estado?: "CONFIRMADA" | "CANCELADA";
 };
 
+type CrearGrupoBody = {
+	nombre?: string;
+	descripcion?: string | null;
+	categoria?: "ACADEMICO" | "CULTURAL" | "SOCIAL" | "DEPORTIVO" | "OTRO";
+	es_oficial?: boolean;
+	id_administrador?: number;
+};
+
 const corsHeaders = {
 	"Access-Control-Allow-Origin": "*",
 	"Access-Control-Allow-Methods": "GET, POST, OPTIONS",
@@ -99,6 +107,41 @@ const selectEventoById = async (db: D1Database, idEvento: number) =>
 		.bind(idEvento)
 		.first();
 
+const selectGrupoById = async (db: D1Database, idGrupo: number) =>
+	db
+		.prepare(
+			`SELECT
+				g.id_grupo,
+				g.nombre,
+				g.descripcion,
+				g.categoria,
+				g.es_oficial,
+				g.estado_verificacion,
+				g.fecha_creacion,
+				g.id_administrador,
+				u.nombre || ' ' || u.apellido AS administrador_nombre,
+				COUNT(m.id_membresia) AS total_miembros
+			 FROM grupo g
+			 JOIN usuario u ON u.id_usuario = g.id_administrador
+			 LEFT JOIN membresia_grupo m
+				ON m.id_grupo = g.id_grupo
+				AND m.estado = 'ACTIVA'
+			 WHERE g.id_grupo = ?
+			 GROUP BY
+				g.id_grupo,
+				g.nombre,
+				g.descripcion,
+				g.categoria,
+				g.es_oficial,
+				g.estado_verificacion,
+				g.fecha_creacion,
+				g.id_administrador,
+				u.nombre,
+				u.apellido`
+		)
+		.bind(idGrupo)
+		.first();
+
 export default {
 	async fetch(request, env): Promise<Response> {
 		const url = new URL(request.url);
@@ -163,43 +206,89 @@ export default {
 			return json({ ok: true, grupos: grupos.results });
 		}
 
+		if (request.method === "POST" && url.pathname === "/grupos") {
+			let body: CrearGrupoBody;
+
+			try {
+				body = await request.json();
+			} catch {
+				return json({ ok: false, error: "El body debe ser JSON valido." }, { status: 400 });
+			}
+
+			const nombre = typeof body.nombre === "string" ? body.nombre.trim() : "";
+			const descripcion = typeof body.descripcion === "string" ? body.descripcion.trim() : null;
+			const categoria = body.categoria;
+			const esOficial = toBoolean(body.es_oficial, false);
+			const idAdministrador = toInteger(body.id_administrador);
+
+			if (!nombre || idAdministrador === null || esOficial === null) {
+				return json(
+					{ ok: false, error: "nombre e id_administrador son obligatorios y deben tener formato valido." },
+					{ status: 400 }
+				);
+			}
+
+			if (!categoria || !["ACADEMICO", "CULTURAL", "SOCIAL", "DEPORTIVO", "OTRO"].includes(categoria)) {
+				return json(
+					{ ok: false, error: "categoria debe ser ACADEMICO, CULTURAL, SOCIAL, DEPORTIVO u OTRO." },
+					{ status: 400 }
+				);
+			}
+
+			try {
+				const grupoResult = await env.unparche_db
+					.prepare(
+						`INSERT INTO grupo (
+							nombre,
+							descripcion,
+							categoria,
+							es_oficial,
+							id_administrador
+						) VALUES (?, ?, ?, ?, ?)`
+					)
+					.bind(nombre, descripcion, categoria, esOficial ? 1 : 0, idAdministrador)
+					.run();
+
+				const idGrupo = grupoResult.meta.last_row_id;
+
+				await env.unparche_db
+					.prepare(
+						`INSERT INTO membresia_grupo (
+							rol_grupo,
+							estado,
+							id_usuario,
+							id_grupo
+						) VALUES ('ADMINISTRADOR', 'ACTIVA', ?, ?)`
+					)
+					.bind(idAdministrador, idGrupo)
+					.run();
+
+				const grupo = await selectGrupoById(env.unparche_db, idGrupo);
+
+				return json(
+					{
+						ok: true,
+						message: "Grupo creado correctamente.",
+						grupo,
+					},
+					{ status: 201 }
+				);
+			} catch (error) {
+				const message = error instanceof Error ? error.message : String(error);
+
+				if (message.toLowerCase().includes("foreign key constraint failed")) {
+					return json({ ok: false, error: "id_administrador no existe." }, { status: 400 });
+				}
+
+				return json({ ok: false, error: "No se pudo crear el grupo." }, { status: 500 });
+			}
+		}
+
 		const grupoMatch = url.pathname.match(/^\/grupos\/(\d+)$/);
 
 		if (request.method === "GET" && grupoMatch) {
 			const idGrupo = Number(grupoMatch[1]);
-			const grupo = await env.unparche_db
-				.prepare(
-					`SELECT
-						g.id_grupo,
-						g.nombre,
-						g.descripcion,
-						g.categoria,
-						g.es_oficial,
-						g.estado_verificacion,
-						g.fecha_creacion,
-						g.id_administrador,
-						u.nombre || ' ' || u.apellido AS administrador_nombre,
-						COUNT(m.id_membresia) AS total_miembros
-					 FROM grupo g
-					 JOIN usuario u ON u.id_usuario = g.id_administrador
-					 LEFT JOIN membresia_grupo m
-						ON m.id_grupo = g.id_grupo
-						AND m.estado = 'ACTIVA'
-					 WHERE g.id_grupo = ?
-					 GROUP BY
-						g.id_grupo,
-						g.nombre,
-						g.descripcion,
-						g.categoria,
-						g.es_oficial,
-						g.estado_verificacion,
-						g.fecha_creacion,
-						g.id_administrador,
-						u.nombre,
-						u.apellido`
-				)
-				.bind(idGrupo)
-				.first();
+			const grupo = await selectGrupoById(env.unparche_db, idGrupo);
 
 			if (!grupo) {
 				return json({ ok: false, error: "Grupo no encontrado." }, { status: 404 });
