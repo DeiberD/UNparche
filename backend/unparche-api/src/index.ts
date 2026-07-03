@@ -28,6 +28,12 @@ type CrearGrupoBody = {
 	id_administrador?: number;
 };
 
+type AgregarMiembroGrupoBody = {
+	id_usuario?: number;
+	rol_grupo?: "ADMINISTRADOR" | "MIEMBRO";
+	estado?: "ACTIVA" | "INACTIVA";
+};
+
 const corsHeaders = {
 	"Access-Control-Allow-Origin": "*",
 	"Access-Control-Allow-Methods": "GET, POST, PATCH, DELETE, OPTIONS",
@@ -317,7 +323,7 @@ export default {
 			});
 		}
 
-		// GET miembros de un grupo (/grupos/:id/eventos)
+		// GET miembros de un grupo (/grupos/:id/miembros)
 		const miembrosGrupoMatch = url.pathname.match(/^\/grupos\/(\d+)\/miembros$/);
 
 		if (request.method === "GET" && miembrosGrupoMatch) {
@@ -369,6 +375,119 @@ export default {
 				grupo,
 				miembros: miembros.results,
 			});
+		}
+
+		// POST agregar usuario a un grupo (/grupos/:id/miembros)
+		if (request.method === "POST" && miembrosGrupoMatch) {
+			const idGrupo = Number(miembrosGrupoMatch[1]);
+
+			let body: AgregarMiembroGrupoBody;
+
+			try {
+				body = await request.json();
+			} catch {
+				return json({ ok: false, error: "El body debe ser JSON valido." }, { status: 400 });
+			}
+
+			const idUsuario = toInteger(body.id_usuario);
+			const rolGrupo = body.rol_grupo ?? "MIEMBRO";
+			const estado = body.estado ?? "ACTIVA";
+
+			if (idUsuario === null) {
+				return json(
+					{ ok: false, error: "id_usuario es obligatorio y debe ser entero." },
+					{ status: 400 }
+				);
+			}
+
+			if (!["ADMINISTRADOR", "MIEMBRO"].includes(rolGrupo)) {
+				return json(
+					{ ok: false, error: "rol_grupo debe ser ADMINISTRADOR o MIEMBRO." },
+					{ status: 400 }
+				);
+			}
+
+			if (!["ACTIVA", "INACTIVA"].includes(estado)) {
+				return json(
+					{ ok: false, error: "estado debe ser ACTIVA o INACTIVA." },
+					{ status: 400 }
+				);
+			}
+
+			try {
+				await env.unparche_db
+					.prepare(
+						`INSERT INTO membresia_grupo (
+							id_usuario,
+							id_grupo,
+							rol_grupo,
+							estado
+						) VALUES (?, ?, ?, ?)
+						ON CONFLICT(id_usuario, id_grupo)
+						DO UPDATE SET
+							rol_grupo = excluded.rol_grupo,
+							estado = excluded.estado`
+					)
+					.bind(idUsuario, idGrupo, rolGrupo, estado)
+					.run();
+
+				const miembro = await env.unparche_db
+					.prepare(
+						`SELECT
+							m.id_membresia,
+							m.id_grupo,
+							g.nombre AS grupo_nombre,
+							m.id_usuario,
+							u.nombre || ' ' || u.apellido AS usuario_nombre,
+							u.correo_institucional,
+							u.carrera,
+							m.rol_grupo,
+							m.estado,
+							m.fecha_union
+						FROM membresia_grupo m
+						JOIN grupo g ON g.id_grupo = m.id_grupo
+						JOIN usuario u ON u.id_usuario = m.id_usuario
+						WHERE m.id_usuario = ?
+						AND m.id_grupo = ?`
+					)
+					.bind(idUsuario, idGrupo)
+					.first();
+
+				return json(
+					{
+						ok: true,
+						message: "Miembro agregado correctamente.",
+						miembro,
+					},
+					{ status: 201 }
+				);
+			} catch (error) {
+				const message = error instanceof Error ? error.message : String(error);
+				const lowerMessage = message.toLowerCase();
+
+				if (lowerMessage.includes("foreign key constraint failed")) {
+					return json(
+						{ ok: false, error: "El usuario o el grupo no existe." },
+						{ status: 400 }
+					);
+				}
+
+				if (
+					lowerMessage.includes("check constraint failed") ||
+					lowerMessage.includes("not null constraint failed") ||
+					lowerMessage.includes("unique constraint failed")
+				) {
+					return json(
+						{ ok: false, error: "Los datos enviados no cumplen las restricciones de la base de datos." },
+						{ status: 400 }
+					);
+				}
+
+				return json(
+					{ ok: false, error: "No se pudo agregar el miembro al grupo." },
+					{ status: 500 }
+				);
+			}
 		}
 
 
