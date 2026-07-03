@@ -59,6 +59,19 @@ ios/Runner.xcodeproj/project.xcworkspace/
 ios/xcuserdata/
 ios/**/*.xcuserstate
 
+# Nested app iOS paths
+app/ios/.symlinks/
+app/ios/Flutter/App.framework
+app/ios/Flutter/Flutter.framework
+app/ios/Flutter/Flutter.podspec
+app/ios/Pods/
+app/ios/.generated/
+app/ios/Runner/GeneratedPluginRegistrant.*
+app/ios/Runner.xcworkspace/
+app/ios/Runner.xcodeproj/project.xcworkspace/
+app/ios/xcuserdata/
+app/ios/**/*.xcuserstate
+
 # macOS
 macos/Flutter/GeneratedPluginRegistrant.swift
 macos/Pods/
