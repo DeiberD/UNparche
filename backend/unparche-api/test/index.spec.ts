@@ -101,6 +101,9 @@ describe("UNparche API worker", () => {
 
 					return {
 						all: async () => ({ results: eventos }),
+						bind: () => ({
+							all: async () => ({ results: eventos }),
+						}),
 					};
 				},
 			} as unknown as D1Database,
@@ -112,6 +115,47 @@ describe("UNparche API worker", () => {
 		expect(response.status).toBe(200);
 		expect(sql).toContain("e.fecha_eliminacion IS NULL");
 		expect(sql).toContain("datetime(e.fecha_fin) > datetime('now', '-24 hours')");
+		await expect(response.json()).resolves.toEqual({ ok: true, eventos });
+	});
+
+	it("lists events with attendance status for a user", async () => {
+		const eventos = [
+			{
+				id_evento: 1,
+				titulo: "Torneo de ajedrez",
+				estado_asistencia: "CONFIRMADA",
+				fecha_confirmacion: "2026-07-02 20:30:00",
+			},
+		];
+		let sql = "";
+		let boundUserId: unknown = null;
+		const request = new IncomingRequest("http://example.com/eventos?id_usuario=2");
+		const ctx = createExecutionContext();
+		const testEnv = {
+			unparche_db: {
+				prepare: (query: string) => {
+					sql = query;
+
+					return {
+						bind: (idUsuario: unknown) => {
+							boundUserId = idUsuario;
+
+							return {
+								all: async () => ({ results: eventos }),
+							};
+						},
+					};
+				},
+			} as unknown as D1Database,
+		} as Env & { unparche_db: D1Database };
+
+		const response = await worker.fetch(request, testEnv, ctx);
+		await waitOnExecutionContext(ctx);
+
+		expect(response.status).toBe(200);
+		expect(boundUserId).toBe(2);
+		expect(sql).toContain("a.estado AS estado_asistencia");
+		expect(sql).toContain("LEFT JOIN asistencia a");
 		await expect(response.json()).resolves.toEqual({ ok: true, eventos });
 	});
 
