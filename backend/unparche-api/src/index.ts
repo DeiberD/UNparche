@@ -23,8 +23,9 @@ type CrearAsistenciaBody = {
 
 type CrearGrupoBody = {
 	nombre?: string;
-	descripcion?: string;
-	categoria?: string;
+	descripcion?: string | null;
+	categoria?: "ACADEMICO" | "CULTURAL" | "SOCIAL" | "DEPORTIVO" | "OTRO";
+	es_oficial?: boolean;
 	id_administrador?: number;
 };
 
@@ -126,6 +127,41 @@ const selectEventoById = async (db: D1Database, idEvento: number) =>
 		.bind(idEvento)
 		.first();
 
+const selectGrupoById = async (db: D1Database, idGrupo: number) =>
+	db
+		.prepare(
+			`SELECT
+				g.id_grupo,
+				g.nombre,
+				g.descripcion,
+				g.categoria,
+				g.es_oficial,
+				g.estado_verificacion,
+				g.fecha_creacion,
+				g.id_administrador,
+				u.nombre || ' ' || u.apellido AS administrador_nombre,
+				COUNT(m.id_membresia) AS total_miembros
+			FROM grupo g
+			JOIN usuario u ON u.id_usuario = g.id_administrador
+			LEFT JOIN membresia_grupo m
+				ON m.id_grupo = g.id_grupo
+				AND m.estado = 'ACTIVA'
+			WHERE g.id_grupo = ?
+			GROUP BY
+				g.id_grupo,
+				g.nombre,
+				g.descripcion,
+				g.categoria,
+				g.es_oficial,
+				g.estado_verificacion,
+				g.fecha_creacion,
+				g.id_administrador,
+				u.nombre,
+				u.apellido`
+		)
+		.bind(idGrupo)
+		.first();
+
 export default {
 	async fetch(request, env): Promise<Response> {
 		const url = new URL(request.url);
@@ -160,16 +196,33 @@ export default {
 			const grupos = await env.unparche_db
 				.prepare(
 					`SELECT
-						id_grupo,
-						nombre,
-						descripcion,
-						categoria,
-						es_oficial,
-						estado_verificacion,
-						fecha_creacion,
-						id_administrador
-					FROM grupo
-					ORDER BY fecha_creacion DESC`
+						g.id_grupo,
+						g.nombre,
+						g.descripcion,
+						g.categoria,
+						g.es_oficial,
+						g.estado_verificacion,
+						g.fecha_creacion,
+						g.id_administrador,
+						u.nombre || ' ' || u.apellido AS administrador_nombre,
+						COUNT(m.id_membresia) AS total_miembros
+					FROM grupo g
+					JOIN usuario u ON u.id_usuario = g.id_administrador
+					LEFT JOIN membresia_grupo m
+						ON m.id_grupo = g.id_grupo
+						AND m.estado = 'ACTIVA'
+					GROUP BY
+						g.id_grupo,
+						g.nombre,
+						g.descripcion,
+						g.categoria,
+						g.es_oficial,
+						g.estado_verificacion,
+						g.fecha_creacion,
+						g.id_administrador,
+						u.nombre,
+						u.apellido
+					ORDER BY g.nombre ASC`
 				)
 				.all();
 
@@ -188,50 +241,58 @@ export default {
 
 			const nombre = typeof body.nombre === "string" ? body.nombre.trim() : "";
 			const descripcion = typeof body.descripcion === "string" ? body.descripcion.trim() : null;
-			const categoria = typeof body.categoria === "string" ? body.categoria.trim().toUpperCase() : "";
+			const categoria = typeof body.categoria === "string"
+				? body.categoria.trim().toUpperCase()
+				: "";
+			const esOficial = toBoolean(body.es_oficial, false);
 			const idAdministrador = toInteger(body.id_administrador);
 
-			if (!nombre || !categoria || idAdministrador === null) {
+			if (!nombre || !categoria || idAdministrador === null || esOficial === null) {
 				return json(
 					{
 						ok: false,
-						error: "nombre, categoria e id_administrador son obligatorios.",
+						error: "nombre, categoria e id_administrador son obligatorios y deben tener formato valido.",
 					},
 					{ status: 400 }
 				);
 			}
 
+			if (!["ACADEMICO", "CULTURAL", "SOCIAL", "DEPORTIVO", "OTRO"].includes(categoria)) {
+				return json(
+					{ ok: false, error: "categoria debe ser ACADEMICO, CULTURAL, SOCIAL, DEPORTIVO u OTRO." },
+					{ status: 400 }
+				);
+			}
+
 			try {
-				const result = await env.unparche_db
+				const grupoResult = await env.unparche_db
 					.prepare(
 						`INSERT INTO grupo (
 							nombre,
 							descripcion,
 							categoria,
+							es_oficial,
 							id_administrador
-						) VALUES (?, ?, ?, ?)`
+						) VALUES (?, ?, ?, ?, ?)`
 					)
-					.bind(nombre, descripcion, categoria, idAdministrador)
+					.bind(nombre, descripcion, categoria, esOficial ? 1 : 0, idAdministrador)
 					.run();
 
-				const idGrupo = result.meta.last_row_id;
+				const idGrupo = grupoResult.meta.last_row_id;
 
-				const grupo = await env.unparche_db
+				await env.unparche_db
 					.prepare(
-						`SELECT
-							id_grupo,
-							nombre,
-							descripcion,
-							categoria,
-							es_oficial,
-							estado_verificacion,
-							fecha_creacion,
-							id_administrador
-						FROM grupo
-						WHERE id_grupo = ?`
+						`INSERT INTO membresia_grupo (
+							rol_grupo,
+							estado,
+							id_usuario,
+							id_grupo
+						) VALUES ('ADMINISTRADOR', 'ACTIVA', ?, ?)`
 					)
-					.bind(idGrupo)
-					.first();
+					.bind(idAdministrador, idGrupo)
+					.run();
+
+				const grupo = await selectGrupoById(env.unparche_db, idGrupo);
 
 				return json(
 					{
@@ -268,6 +329,20 @@ export default {
 					{ status: 500 }
 				);
 			}
+		}
+
+		// GET grupo por id (/grupos/:id)
+		const grupoMatch = url.pathname.match(/^\/grupos\/(\d+)$/);
+
+		if (request.method === "GET" && grupoMatch) {
+			const idGrupo = Number(grupoMatch[1]);
+			const grupo = await selectGrupoById(env.unparche_db, idGrupo);
+
+			if (!grupo) {
+				return json({ ok: false, error: "Grupo no encontrado." }, { status: 404 });
+			}
+
+			return json({ ok: true, grupo });
 		}
 
 		// GET eventos asociados a un grupo (/grupos/:id/eventos)
