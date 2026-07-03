@@ -106,6 +106,43 @@ export default {
 			return json({ ok: true, message: "UNparche API" });
 		}
 
+		if (request.method === "GET" && url.pathname === "/grupos") {
+			const grupos = await env.unparche_db
+				.prepare(
+					`SELECT
+						g.id_grupo,
+						g.nombre,
+						g.descripcion,
+						g.categoria,
+						g.es_oficial,
+						g.estado_verificacion,
+						g.fecha_creacion,
+						g.id_administrador,
+						u.nombre || ' ' || u.apellido AS administrador_nombre,
+						COUNT(m.id_membresia) AS total_miembros
+					 FROM grupo g
+					 JOIN usuario u ON u.id_usuario = g.id_administrador
+					 LEFT JOIN membresia_grupo m
+						ON m.id_grupo = g.id_grupo
+						AND m.estado = 'ACTIVA'
+					 GROUP BY
+						g.id_grupo,
+						g.nombre,
+						g.descripcion,
+						g.categoria,
+						g.es_oficial,
+						g.estado_verificacion,
+						g.fecha_creacion,
+						g.id_administrador,
+						u.nombre,
+						u.apellido
+					 ORDER BY g.nombre ASC`
+				)
+				.all();
+
+			return json({ ok: true, grupos: grupos.results });
+		}
+
 		if (request.method === "GET" && url.pathname === "/eventos") {
 			const eventos = await env.unparche_db
 				.prepare(
