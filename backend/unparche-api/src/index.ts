@@ -144,6 +144,7 @@ const selectGrupoById = async (db: D1Database, idGrupo: number) =>
 				g.fecha_creacion,
 				g.id_administrador,
 				u.nombre || ' ' || u.apellido AS administrador_nombre,
+				COUNT(m.id_membresia) AS cantidad_integrantes,
 				COUNT(m.id_membresia) AS total_miembros
 			FROM grupo g
 			JOIN usuario u ON u.id_usuario = g.id_administrador
@@ -182,9 +183,11 @@ const selectInvitacionGrupoById = async (db: D1Database, idInvitacion: number) =
 				g.categoria,
 				g.es_oficial,
 				g.estado_verificacion,
+				g.fecha_creacion,
 				g.id_administrador,
 				(inv.nombre || ' ' || inv.apellido) AS nombre_invitador,
-				COUNT(m.id_membresia) AS cantidad_integrantes
+				COUNT(m.id_membresia) AS cantidad_integrantes,
+				COUNT(m.id_membresia) AS total_miembros
 			FROM invitacion_grupo i
 			JOIN grupo g
 				ON g.id_grupo = i.id_grupo
@@ -194,7 +197,17 @@ const selectInvitacionGrupoById = async (db: D1Database, idInvitacion: number) =
 				ON m.id_grupo = g.id_grupo
 				AND m.estado = 'ACTIVA'
 			WHERE i.id_invitacion_grupo = ?
-			GROUP BY i.id_invitacion_grupo`
+			GROUP BY
+				i.id_invitacion_grupo,
+				g.nombre,
+				g.descripcion,
+				g.categoria,
+				g.es_oficial,
+				g.estado_verificacion,
+				g.fecha_creacion,
+				g.id_administrador,
+				inv.nombre,
+				inv.apellido`
 		)
 		.bind(idInvitacion)
 		.first();
@@ -241,25 +254,36 @@ export default {
 						g.estado_verificacion,
 						g.fecha_creacion,
 						g.id_administrador,
-				u.nombre || ' ' || u.apellido AS administrador_nombre,
-				COUNT(m.id_membresia) AS total_miembros
-			FROM grupo g
-			JOIN usuario u ON u.id_usuario = g.id_administrador
-			LEFT JOIN membresia_grupo m
-				ON m.id_grupo = g.id_grupo
-				AND m.estado = 'ACTIVA'
-			GROUP BY
-				g.id_grupo,
-				g.nombre,
-				g.descripcion,
-				g.categoria,
-				g.es_oficial,
-				g.estado_verificacion,
-				g.fecha_creacion,
-				g.id_administrador,
-				u.nombre,
-				u.apellido
-			ORDER BY g.nombre ASC`
+						u.nombre || ' ' || u.apellido AS administrador_nombre,
+						COUNT(m.id_membresia) AS cantidad_integrantes,
+						COUNT(m.id_membresia) AS total_miembros
+					FROM grupo g
+					JOIN usuario u ON u.id_usuario = g.id_administrador
+					LEFT JOIN membresia_grupo m
+						ON m.id_grupo = g.id_grupo
+						AND m.estado = 'ACTIVA'
+					GROUP BY
+						g.id_grupo,
+						g.nombre,
+						g.descripcion,
+						g.categoria,
+						g.es_oficial,
+						g.estado_verificacion,
+						g.fecha_creacion,
+						g.id_administrador,
+						u.nombre,
+						u.apellido
+					ORDER BY g.nombre ASC`
+				)
+				.all();
+
+			return json({ ok: true, grupos: grupos.results });
+		}
+
+		// POST grupos (/grupos)
+		if (request.method === "POST" && url.pathname === "/grupos") {
+			let body: CrearGrupoBody;
+
 			try {
 				body = await request.json();
 			} catch {
@@ -310,14 +334,29 @@ export default {
 				await env.unparche_db
 					.prepare(
 						`INSERT INTO membresia_grupo (
-						id_usuario,
-						id_grupo,
-						rol_grupo,
-						estado
-					) VALUES (?, ?, 'ADMINISTRADOR', 'ACTIVA')`
-			)
-			.bind(idAdministrador, idGrupo)
-			.run();
+							rol_grupo,
+							estado,
+							id_usuario,
+							id_grupo
+						) VALUES ('ADMINISTRADOR', 'ACTIVA', ?, ?)`
+					)
+					.bind(idAdministrador, idGrupo)
+					.run();
+
+				const grupo = await selectGrupoById(env.unparche_db, idGrupo);
+
+				return json(
+					{
+						ok: true,
+						message: "Grupo creado correctamente.",
+						grupo,
+					},
+					{ status: 201 }
+				);
+			} catch (error) {
+				const message = error instanceof Error ? error.message : String(error);
+				const lowerMessage = message.toLowerCase();
+
 				if (lowerMessage.includes("foreign key constraint failed")) {
 					return json(
 						{ ok: false, error: "El id_administrador no existe." },
@@ -609,9 +648,11 @@ export default {
 						g.categoria,
 						g.es_oficial,
 						g.estado_verificacion,
+						g.fecha_creacion,
 						g.id_administrador,
 						(inv.nombre || ' ' || inv.apellido) AS nombre_invitador,
-						COUNT(m.id_membresia) AS cantidad_integrantes
+						COUNT(m.id_membresia) AS cantidad_integrantes,
+						COUNT(m.id_membresia) AS total_miembros
 					 FROM invitacion_grupo i
 					 JOIN grupo g
 						ON g.id_grupo = i.id_grupo
@@ -621,7 +662,17 @@ export default {
 						ON m.id_grupo = g.id_grupo
 						AND m.estado = 'ACTIVA'
 					 WHERE i.id_invitado = ?
-					 GROUP BY i.id_invitacion_grupo
+					 GROUP BY
+						i.id_invitacion_grupo,
+						g.nombre,
+						g.descripcion,
+						g.categoria,
+						g.es_oficial,
+						g.estado_verificacion,
+						g.fecha_creacion,
+						g.id_administrador,
+						inv.nombre,
+						inv.apellido
 					 ORDER BY i.fecha_envio DESC`
 				)
 				.bind(idUsuario)
