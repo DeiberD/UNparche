@@ -1,10 +1,8 @@
 #include "chat.hpp"
 #include "../user/user.hpp"
-#include "../http_client/http_notifier.hpp"
 #include <algorithm>
 
-Chat::Chat(int id_evento, HttpNotifier& notifier)
-    : id_evento_(id_evento), notifier_(notifier) {}
+Chat::Chat() = default;
 
 void Chat::addUser(const std::shared_ptr<User>& user) {
     users_.push_back(user);
@@ -19,8 +17,11 @@ void Chat::removeUser(User* user) {
 }
 
 void Chat::receiveMessage(const std::string& nickname, const std::string& contenido) {
-    Message message{id_evento_, nickname, contenido, Message::now_ms()};
+    Message message{ nickname, contenido, Message::now_ms() };
     const std::string jsonLine = message.toJsonLine();
+
+    // Guardar en el historial en memoria
+    messages_.push_back(message);
 
     // Broadcast a todos los usuarios conectados a esta sala (incluido el
     // remitente, para que el cliente confirme entrega/orden con la copia
@@ -28,7 +29,10 @@ void Chat::receiveMessage(const std::string& nickname, const std::string& conten
     for (const auto& u : users_) {
         u->deliver(jsonLine);
     }
+}
 
-    // Persistencia fire-and-forget: no bloquea el broadcast de arriba.
-    notifier_.notifyMessageAsync(message);
+void Chat::loadChat(const std::shared_ptr<User>& user) {
+    for (const auto& msg : messages_) {
+        user->deliver(msg.toJsonLine());
+    }
 }

@@ -111,17 +111,27 @@ void User::handleLine(const std::string& line) {
 }
 
 void User::handleJoin(int id_evento, const std::string& nickname) {
-    id_evento_ = id_evento;
+    chat_ = registry_.getChat(id_evento);
+    if (!chat_) {
+        json::object err;
+        err["type"] = "error";
+        err["message"] = "No se encontro el chat";
+        deliver(json::serialize(err));
+        closeConnection();  // se intentó conectar a un chat inexistente
+        return;
+    }
+
     nickname_ = nickname;
     joined_ = true;
 
-    chat_ = registry_.getOrCreate(id_evento_);
     chat_->addUser(shared_from_this());
+    // Enviar historial almacenado en memoria al usuario que recien se unio
+    chat_->loadChat(shared_from_this());
 
     // Confirmacion al cliente de que el join fue exitoso.
     json::object ack;
     ack["type"] = "joined";
-    ack["id_evento"] = id_evento_;
+    ack["id_evento"] = id_evento;
     ack["nickname"] = nickname_;
     deliver(json::serialize(ack));
 }
@@ -166,7 +176,13 @@ void User::closeConnection() {
         chat_.reset();
     }
 
-    boost::system::error_code ignored;
-    socket_.shutdown(tcp::socket::shutdown_both, ignored);
-    socket_.close(ignored);
+    try {
+        socket_.shutdown(tcp::socket::shutdown_both);
+    } catch (...) {
+    }
+
+    try {
+        socket_.close();
+    } catch (...) {
+    }
 }

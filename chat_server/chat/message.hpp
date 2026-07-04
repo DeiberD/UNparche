@@ -4,7 +4,6 @@
 
 // Representa un mensaje ya validado y listo para difundir/persistir.
 struct Message {
-    int id_evento;
     std::string nickname;
     std::string contenido;
     long long timestamp_ms; // epoch millis, calculado por el server (fuente de verdad unica)

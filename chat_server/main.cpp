@@ -41,7 +41,7 @@ int main()
         const std::string internalToken = envOr("UNPARCHE_INTERNAL_TOKEN", "");
 
         HttpNotifier notifier(io_context, apiHost, apiPort, apiTarget, internalToken);
-        ChatRegistry registry(notifier);
+        ChatRegistry registry;
 
         tcp::endpoint endpoint(tcp::v4(), port);
         tcp::acceptor acceptor(io_context, endpoint);

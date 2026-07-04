@@ -27,7 +27,6 @@ public:
     void deliver(const std::string& jsonLine);
 
     const std::string& nickname() const { return nickname_; }
-    int idEvento() const { return id_evento_; }
 
 private:
     void readLine();
@@ -43,7 +42,6 @@ private:
     std::deque<std::string> writeQueue_;
 
     std::string nickname_;
-    int id_evento_ = -1;
     bool joined_ = false;
     std::shared_ptr<Chat> chat_; // sala a la que pertenece una vez hace join
 };
