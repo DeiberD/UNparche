@@ -7,6 +7,7 @@ import 'view_events_screen.dart';
 import 'view_groups_screen.dart';
 
 const _mapboxAccessToken = String.fromEnvironment('ACCESS_TOKEN');
+const _demoUserId = 1;
 
 enum _HomeTab { map, events, groups }
 
@@ -122,7 +123,7 @@ class _CampusMapScreenState extends State<CampusMapScreen> {
     });
 
     try {
-      final events = await _eventApiClient.fetchEvents();
+      final events = await _eventApiClient.fetchEvents(viewerUserId: _demoUserId);
       final sortedEvents = [...events]
         ..sort((a, b) {
           final aStart = a.start;
@@ -197,6 +198,7 @@ class _CampusMapScreenState extends State<CampusMapScreen> {
       eventTypeId: event.eventTypeId,
       eventTypeName: null,
       status: 'PROGRAMADO',
+      attendanceStatus: null,
     );
     setState(() {
       _allEvents = [..._allEvents, eventSummary]
@@ -357,7 +359,14 @@ class _CampusMapScreenState extends State<CampusMapScreen> {
 
   Future<void> _openEventDetails(EventSummary event) async {
     final shouldOpenLocation = await Navigator.of(context).push<bool>(
-      MaterialPageRoute(builder: (_) => EventDetailScreen(event: event)),
+      MaterialPageRoute(
+        builder: (_) => EventDetailScreen(
+          event: event,
+          eventApiClient: _eventApiClient,
+          currentUserId: _demoUserId,
+          onAttendanceChanged: _replaceEvent,
+        ),
+      ),
     );
 
     if (shouldOpenLocation == true && mounted) {
@@ -366,6 +375,22 @@ class _CampusMapScreenState extends State<CampusMapScreen> {
         _focusedEvent = event;
       });
     }
+  }
+
+  void _replaceEvent(EventSummary updatedEvent) {
+    setState(() {
+      _allEvents = _allEvents
+          .map((event) => event.id == updatedEvent.id ? updatedEvent : event)
+          .toList()
+        ..sort(
+          (a, b) =>
+              (a.start ?? DateTime(9999)).compareTo(b.start ?? DateTime(9999)),
+        );
+
+      if (_focusedEvent?.id == updatedEvent.id) {
+        _focusedEvent = updatedEvent;
+      }
+    });
   }
 
   @override

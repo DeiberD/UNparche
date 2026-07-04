@@ -1502,43 +1502,65 @@ export default {
 
 		// GET eventos
 		if (request.method === "GET" && url.pathname === "/eventos") {
-			const eventos = await env.unparche_db
-				.prepare(
-					`SELECT
-						e.id_evento,
-						e.titulo,
-						e.descripcion,
-						e.fecha_inicio,
-						e.duracion_minutos,
-						e.fecha_fin,
-						e.fecha_publicacion,
-						e.latitud,
-						e.longitud,
-						e.visibilidad,
-						e.chat_habilitado,
-						e.estado,
-						e.id_organizador,
-						u.nombre || ' ' || u.apellido AS organizador_nombre,
-						u.correo_institucional AS organizador_correo,
-						u.carrera AS organizador_carrera,
-						u.informacion_personal AS organizador_informacion,
-						e.id_grupo,
-						g.nombre AS grupo_nombre,
-						g.descripcion AS grupo_descripcion,
-						g.categoria AS grupo_categoria,
-						g.es_oficial AS grupo_es_oficial,
-						g.estado_verificacion AS grupo_estado_verificacion,
-						e.id_tipo_evento,
-						t.nombre AS tipo_evento_nombre,
-						t.icono_svg AS tipo_evento_icono
-					FROM evento e
-					JOIN usuario u ON u.id_usuario = e.id_organizador
-					JOIN tipo_evento t ON t.id_tipo_evento = e.id_tipo_evento
-					LEFT JOIN grupo g ON g.id_grupo = e.id_grupo
-					WHERE ${activeEventConditionForAlias("e")}
-					ORDER BY e.fecha_inicio DESC`
-				)
-				.all();
+			const idUsuarioParam = url.searchParams.get("id_usuario");
+			const idUsuario = idUsuarioParam === null ? null : Number(idUsuarioParam);
+
+			if (idUsuarioParam !== null && !Number.isInteger(idUsuario)) {
+				return json(
+					{ ok: false, error: "id_usuario debe ser entero." },
+					{ status: 400 }
+				);
+			}
+
+			const asistenciaSelect = idUsuario === null
+				? `NULL AS estado_asistencia,
+						NULL AS fecha_confirmacion`
+				: `a.estado AS estado_asistencia,
+						a.fecha_confirmacion`;
+			const asistenciaJoin = idUsuario === null
+				? ""
+				: `LEFT JOIN asistencia a
+					ON a.id_evento = e.id_evento
+					AND a.id_usuario = ?`;
+			const eventosQuery = `SELECT
+				e.id_evento,
+				e.titulo,
+				e.descripcion,
+				e.fecha_inicio,
+				e.duracion_minutos,
+				e.fecha_fin,
+				e.fecha_publicacion,
+				e.latitud,
+				e.longitud,
+				e.visibilidad,
+				e.chat_habilitado,
+				e.estado,
+				e.id_organizador,
+				u.nombre || ' ' || u.apellido AS organizador_nombre,
+				u.correo_institucional AS organizador_correo,
+				u.carrera AS organizador_carrera,
+				u.informacion_personal AS organizador_informacion,
+				e.id_grupo,
+				g.nombre AS grupo_nombre,
+				g.descripcion AS grupo_descripcion,
+				g.categoria AS grupo_categoria,
+				g.es_oficial AS grupo_es_oficial,
+				g.estado_verificacion AS grupo_estado_verificacion,
+				e.id_tipo_evento,
+				t.nombre AS tipo_evento_nombre,
+				t.icono_svg AS tipo_evento_icono,
+				${asistenciaSelect}
+			FROM evento e
+			JOIN usuario u ON u.id_usuario = e.id_organizador
+			JOIN tipo_evento t ON t.id_tipo_evento = e.id_tipo_evento
+			LEFT JOIN grupo g ON g.id_grupo = e.id_grupo
+			${asistenciaJoin}
+			WHERE ${activeEventConditionForAlias("e")}
+			ORDER BY e.fecha_inicio DESC`;
+			const eventosStatement = env.unparche_db.prepare(eventosQuery);
+			const eventos = idUsuario === null
+				? await eventosStatement.all()
+				: await eventosStatement.bind(idUsuario).all();
 
 			return json({ ok: true, eventos: eventos.results });
 		}

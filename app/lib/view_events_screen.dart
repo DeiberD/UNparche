@@ -752,13 +752,37 @@ class EventListTile extends StatelessWidget {
   }
 }
 
-class EventDetailScreen extends StatelessWidget {
-  const EventDetailScreen({super.key, required this.event});
+class EventDetailScreen extends StatefulWidget {
+  const EventDetailScreen({
+    super.key,
+    required this.event,
+    required this.eventApiClient,
+    required this.currentUserId,
+    required this.onAttendanceChanged,
+  });
 
   final EventSummary event;
+  final EventApiClient eventApiClient;
+  final int currentUserId;
+  final ValueChanged<EventSummary> onAttendanceChanged;
+
+  @override
+  State<EventDetailScreen> createState() => _EventDetailScreenState();
+}
+
+class _EventDetailScreenState extends State<EventDetailScreen> {
+  late EventSummary _event;
+  bool _isUpdatingAttendance = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _event = widget.event;
+  }
 
   @override
   Widget build(BuildContext context) {
+    final event = _event;
     final title = event.title.trim().isEmpty
         ? 'Evento sin titulo'
         : event.title;
@@ -872,6 +896,14 @@ class EventDetailScreen extends StatelessWidget {
             const SizedBox(height: 12),
             _OrganizerCard(event: event),
             const SizedBox(height: 12),
+            _AttendanceCard(
+              event: event,
+              isUpdating: _isUpdatingAttendance,
+              onPressed: event.isActive && event.id != null
+                  ? _toggleAttendance
+                  : null,
+            ),
+            const SizedBox(height: 12),
             SizedBox(
               height: 54,
               child: FilledButton.icon(
@@ -892,6 +924,163 @@ class EventDetailScreen extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Future<void> _toggleAttendance() async {
+    if (_isUpdatingAttendance) {
+      return;
+    }
+
+    final eventId = _event.id;
+    if (eventId == null) {
+      _showAttendanceMessage('Este evento no tiene identificador valido.');
+      return;
+    }
+
+    setState(() => _isUpdatingAttendance = true);
+
+    try {
+      if (_event.hasConfirmedAttendance) {
+        await widget.eventApiClient.cancelAttendance(
+          eventId: eventId,
+          userId: widget.currentUserId,
+        );
+        _updateAttendanceStatus('CANCELADA');
+        _showAttendanceMessage('Asistencia cancelada.');
+      } else {
+        await widget.eventApiClient.confirmAttendance(
+          eventId: eventId,
+          userId: widget.currentUserId,
+        );
+        _updateAttendanceStatus('CONFIRMADA');
+        _showAttendanceMessage('Asistencia confirmada.');
+      }
+    } on EventApiException catch (error) {
+      _showAttendanceMessage(error.message);
+    } catch (_) {
+      _showAttendanceMessage('No se pudo actualizar la asistencia.');
+    } finally {
+      if (mounted) {
+        setState(() => _isUpdatingAttendance = false);
+      }
+    }
+  }
+
+  void _updateAttendanceStatus(String status) {
+    final updatedEvent = _event.copyWith(attendanceStatus: status);
+    setState(() => _event = updatedEvent);
+    widget.onAttendanceChanged(updatedEvent);
+  }
+
+  void _showAttendanceMessage(String message) {
+    if (!mounted) {
+      return;
+    }
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message)),
+    );
+  }
+}
+
+class _AttendanceCard extends StatelessWidget {
+  const _AttendanceCard({
+    required this.event,
+    required this.isUpdating,
+    required this.onPressed,
+  });
+
+  final EventSummary event;
+  final bool isUpdating;
+  final VoidCallback? onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final isConfirmed = event.hasConfirmedAttendance;
+    final canInteract = onPressed != null;
+    final statusText = isConfirmed
+        ? 'Tu asistencia esta confirmada.'
+        : canInteract
+        ? 'Aun no has confirmado asistencia.'
+        : 'Este evento no permite cambios de asistencia.';
+
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white.withAlpha(238),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: EventsListView.ink.withAlpha(18)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(
+                isConfirmed
+                    ? Icons.check_circle_outline
+                    : Icons.how_to_reg_outlined,
+                color: EventsListView.ink,
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  'Asistencia',
+                  style: TextStyle(
+                    color: EventsListView.ink.withAlpha(170),
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            statusText,
+            style: const TextStyle(
+              color: EventsListView.ink,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(height: 12),
+          SizedBox(
+            height: 48,
+            width: double.infinity,
+            child: FilledButton.icon(
+              onPressed: isUpdating ? null : onPressed,
+              icon: isUpdating
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : Icon(
+                      isConfirmed
+                          ? Icons.event_busy_outlined
+                          : Icons.event_available_outlined,
+                    ),
+              label: Text(
+                isUpdating
+                    ? 'Actualizando...'
+                    : isConfirmed
+                    ? 'Cancelar asistencia'
+                    : 'Confirmar asistencia',
+              ),
+              style: FilledButton.styleFrom(
+                backgroundColor: isConfirmed
+                    ? const Color(0xFF7A3525)
+                    : EventsListView.ink,
+                foregroundColor: Colors.white,
+                textStyle: const TextStyle(fontWeight: FontWeight.w800),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                ),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
