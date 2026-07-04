@@ -11,6 +11,7 @@
 .migrate/
 .idea/
 *.iml
+test_boost/
 
 # VS Code
 .vscode/
