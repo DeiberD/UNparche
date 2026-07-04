@@ -38,6 +38,10 @@ dependencies:
     path: vendor/mapbox_maps_flutter
   flutter_plugin_android_lifecycle: 2.0.29
 
+  # Cliente HTTP usado por ChatScreen para cargar el historial de mensajes
+  # (GET /eventos/:id/mensajes) antes de conectar el socket TCP del chat.
+  http: ^1.6.0
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

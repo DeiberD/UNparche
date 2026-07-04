@@ -1,21 +1,32 @@
 #pragma once
-#include <boost/asio.hpp>
+#include <memory>
+#include <string>
 #include <vector>
-
-namespace asio = boost::asio;
-using tcp = asio::ip::tcp;
+#include "message.hpp"
 
 class User; // forward declaration
-class Message;
+class HttpNotifier;
 
-class Chat{
-private:
-    std::string eventName;
-    std::vector<User*> users;
-    std::vector<Message> messages;
-    
+// Sala de chat asociada a un evento especifico (id_evento). Vive en
+// memoria mientras haya al menos una referencia activa (ver ChatRegistry).
+// No conoce SQL ni nada de persistencia directamente: delega eso al
+// HttpNotifier via fire-and-forget.
+class Chat : public std::enable_shared_from_this<Chat> {
 public:
-    void addUser(User* user);
+    Chat(int id_evento, HttpNotifier& notifier);
+
+    void addUser(const std::shared_ptr<User>& user);
     void removeUser(User* user);
-    void receiveMessage(User* sender, Message& message);
+
+    // Recibe un mensaje ya validado, lo hace broadcast a todos los
+    // usuarios conectados a esta sala y dispara la persistencia async.
+    void receiveMessage(const std::string& nickname, const std::string& contenido);
+
+    int idEvento() const { return id_evento_; }
+    size_t userCount() const { return users_.size(); }
+
+private:
+    int id_evento_;
+    std::vector<std::shared_ptr<User>> users_;
+    HttpNotifier& notifier_;
 };
