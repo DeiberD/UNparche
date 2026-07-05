@@ -3,6 +3,7 @@ import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart';
 
 import 'create_event_screen.dart';
 import 'event_api_client.dart';
+import 'profile_screen.dart';
 import 'view_events_screen.dart';
 import 'view_groups_screen.dart';
 
@@ -778,6 +779,15 @@ class MissingMapboxTokenView extends StatelessWidget {
 class MapHeader extends StatelessWidget {
   const MapHeader({super.key});
 
+  /// Navega a la pantalla de perfil del usuario
+  void _openProfile(BuildContext context) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => const ProfileScreen(),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Container(
@@ -796,10 +806,15 @@ class MapHeader extends StatelessWidget {
       child: Row(
         children: [
           const SizedBox(width: 12),
-          CircleAvatar(
-            radius: 17,
-            backgroundColor: CampusMapScreen._accent,
-            child: Icon(Icons.person, color: CampusMapScreen._ink, size: 20),
+          // Avatar del usuario con funcionalidad de tap para abrir perfil
+          InkWell(
+            onTap: () => _openProfile(context),
+            borderRadius: BorderRadius.circular(17),
+            child: CircleAvatar(
+              radius: 17,
+              backgroundColor: CampusMapScreen._accent,
+              child: Icon(Icons.person, color: CampusMapScreen._ink, size: 20),
+            ),
           ),
           const Expanded(
             child: Center(
