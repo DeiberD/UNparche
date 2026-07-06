@@ -1,6 +1,23 @@
+import 'dart:async';
+import 'dart:io';
 import 'package:flutter/material.dart';
 
 import 'event_api_client.dart';
+import 'flutter_chat/chat_socket_client.dart';
+
+const _configuredChatServerHost = String.fromEnvironment('CHAT_SERVER_HOST');
+const _chatServerPort = int.fromEnvironment(
+  'CHAT_SERVER_PORT',
+  defaultValue: 5000,
+);
+
+String get _chatServerHost {
+  if (_configuredChatServerHost.isNotEmpty) {
+    return _configuredChatServerHost;
+  }
+
+  return '192.168.1.118';
+}
 
 enum EventTimeScope { future, past }
 
@@ -752,13 +769,69 @@ class EventListTile extends StatelessWidget {
   }
 }
 
-class EventDetailScreen extends StatelessWidget {
+class EventDetailScreen extends StatefulWidget {
   const EventDetailScreen({super.key, required this.event});
 
   final EventSummary event;
 
   @override
+  State<EventDetailScreen> createState() => _EventDetailScreenState();
+}
+
+class _EventDetailScreenState extends State<EventDetailScreen> {
+  ChatSocketClient? _chatClient;
+  bool _isDisposed = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _connectToChat();
+  }
+
+  Future<void> _connectToChat() async {
+    final eventId = widget.event.id;
+    if (eventId == null) {
+      debugPrint('[Chat] No se puede conectar: el evento no tiene ID.');
+      return;
+    }
+
+    final client = ChatSocketClient(
+      host: _chatServerHost,
+      port: _chatServerPort,
+    );
+
+    try {
+      await client.connectAndJoin(idEvento: eventId, nickname: 'usuario');
+
+      // La conexion puede terminar despues de que el usuario haya cerrado
+      // rapidamente la pantalla. En ese caso no dejamos el socket abierto.
+      if (_isDisposed) {
+        await client.dispose();
+        return;
+      }
+
+      _chatClient = client;
+    } on ChatSocketException catch (error) {
+      debugPrint('[Chat] No fue posible entrar al evento $eventId: $error');
+      await client.dispose();
+    }
+  }
+
+  @override
+  void dispose() {
+    _isDisposed = true;
+
+    final client = _chatClient;
+    if (client != null) {
+      unawaited(client.dispose());
+    }
+
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final event = widget.event;
     final title = event.title.trim().isEmpty
         ? 'Evento sin titulo'
         : event.title;

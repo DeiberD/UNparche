@@ -38,9 +38,9 @@ int main()
         const unsigned short port =
             static_cast<unsigned short>(std::stoi(envOr("CHAT_SERVER_PORT", "5000")));
 
-        const std::string apiHost = envOr("UNPARCHE_API_HOST", "127.0.0.1");
-        const std::string apiPort = envOr("UNPARCHE_API_PORT", "8787");
-        const bool apiUseTls = envFlag("UNPARCHE_API_USE_TLS", false);
+        const std::string apiHost = envOr("UNPARCHE_API_HOST", "unparche-api.unparche-cabz.workers.dev");
+        const std::string apiPort = envOr("UNPARCHE_API_PORT", "443");
+        const bool apiUseTls = envFlag("UNPARCHE_API_USE_TLS", true);
         const std::string eventIdsTarget =
             envOr("UNPARCHE_API_EVENT_IDS_TARGET", "/eventos/ids-actuales");
 

@@ -94,10 +94,11 @@ INSERT INTO asistencia (
 INSERT INTO mensaje_chat (
     id_mensaje,
     contenido,
+    nickname,
     id_evento,
     id_usuario
 ) VALUES
-    (1, 'Hola, nos vemos en el torneo.', 1, 2);
+    (1, 'Hola, nos vemos en el torneo.', 'Juan Perez', 1, 2);
 
 INSERT INTO anuncio (
     id_anuncio,
