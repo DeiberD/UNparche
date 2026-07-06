@@ -1591,6 +1591,23 @@ export default {
 
 
 		// GET eventos
+		if (request.method === "GET" && url.pathname === "/eventos/ids-actuales") {
+			const eventosActuales = await env.unparche_db
+				.prepare(
+					`SELECT
+						id_evento
+					FROM evento
+					WHERE fecha_eliminacion IS NULL
+					AND estado IN ('PROGRAMADO', 'EN_CURSO')
+					AND chat_habilitado = 1
+					ORDER BY fecha_inicio ASC`
+				)
+				.all<{ id_evento: number }>();
+
+			return json(eventosActuales.results.map((evento) => evento.id_evento));
+		}
+
+		// GET eventos
 		if (request.method === "GET" && url.pathname === "/eventos") {
 			const eventos = await env.unparche_db
 				.prepare(

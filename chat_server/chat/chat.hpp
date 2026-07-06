@@ -11,7 +11,6 @@ class User; // forward declaration
 // No conoce SQL ni nada de persistencia
 class Chat : public std::enable_shared_from_this<Chat> {
 public:
-    Chat();
 
     void addUser(const std::shared_ptr<User>& user);
     void removeUser(User* user);

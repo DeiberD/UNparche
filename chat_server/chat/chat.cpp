@@ -2,8 +2,6 @@
 #include "../user/user.hpp"
 #include <algorithm>
 
-Chat::Chat() = default;
-
 void Chat::addUser(const std::shared_ptr<User>& user) {
     users_.push_back(user);
 }

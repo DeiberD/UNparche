@@ -12,6 +12,7 @@
 .idea/
 *.iml
 test_boost/
+.clangd
 
 # VS Code
 .vscode/
@@ -123,3 +124,6 @@ GoogleService-Info.plist
 # Node dependencies
 node_modules/
 **/node_modules/
+
+package-lock.json
+package.json

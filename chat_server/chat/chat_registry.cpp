@@ -8,3 +8,9 @@ std::shared_ptr<Chat> ChatRegistry::getChat(int id_evento) {
     }
     return nullptr;
 }
+
+void ChatRegistry::registerEvents(const std::vector<int>& eventIds) {
+    for (int id : eventIds) {
+        chats_.try_emplace(id, std::make_shared<Chat>());
+    }
+}

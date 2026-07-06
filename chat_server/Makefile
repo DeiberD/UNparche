@@ -1,13 +1,13 @@
-SRCDIRS = . acceptor_logic chat user http_client
+SRCDIRS = . acceptor_logic api_backend chat user
 BUILDDIR = build
 OUTDIR = bin
 
 # Busca los .cpp en la raiz y en cada subcarpeta de modulos
 SOURCES = $(wildcard *.cpp) \
           $(wildcard acceptor_logic/*.cpp) \
+          $(wildcard api_backend/*.cpp) \
           $(wildcard chat/*.cpp) \
-          $(wildcard user/*.cpp) \
-          $(wildcard http_client/*.cpp)
+		  $(wildcard user/*.cpp)
 
 # Cada .cpp genera su .o dentro de build/, conservando el nombre
 # (aplana la ruta: acceptor_logic/acceptor.cpp -> build/acceptor.o)
@@ -35,8 +35,10 @@ LIB = -L"$(BOOST_LIB)" \
 
 # Variables de entorno para correr el server (make run)
 CHAT_SERVER_PORT ?= 5000
-UNPARCHE_API_HOST ?= tu-worker.workers.dev
-UNPARCHE_API_PORT ?= 443
+UNPARCHE_API_HOST ?= 127.0.0.1
+UNPARCHE_API_PORT ?= 8787
+UNPARCHE_API_USE_TLS ?= false
+UNPARCHE_API_EVENT_IDS_TARGET ?= /eventos/ids-actuales
 
 # Regla de busqueda: le dice a make donde encontrar los .cpp de cada modulo
 vpath %.cpp $(SRCDIRS)
@@ -55,6 +57,8 @@ run: $(OUTDIR)/$(EXECUTABLE)
 	CHAT_SERVER_PORT=$(CHAT_SERVER_PORT) \
 	UNPARCHE_API_HOST=$(UNPARCHE_API_HOST) \
 	UNPARCHE_API_PORT=$(UNPARCHE_API_PORT) \
+	UNPARCHE_API_USE_TLS=$(UNPARCHE_API_USE_TLS) \
+	UNPARCHE_API_EVENT_IDS_TARGET=$(UNPARCHE_API_EVENT_IDS_TARGET) \
 	./$(OUTDIR)/$(EXECUTABLE)
 
 clean:

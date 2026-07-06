@@ -3,8 +3,8 @@
 #include <iostream>
 #include <cstdlib>
 #include "acceptor_logic/acceptor.hpp"
+#include "api_backend/api_backend.hpp"
 #include "chat/chat_registry.hpp"
-#include "http_client/http_notifier.hpp"
 
 namespace asio = boost::asio;
 using tcp = asio::ip::tcp;
@@ -20,6 +20,11 @@ std::string envOr(const char* name, std::string defaultValue) {
     return std::string(value);
 }
 
+bool envFlag(const char* name, bool defaultValue) {
+    const std::string value = envOr(name, defaultValue ? "true" : "false");
+    return value == "1" || value == "true" || value == "TRUE";
+}
+
 } // namespace
 
 int main()
@@ -33,21 +38,25 @@ int main()
         const unsigned short port =
             static_cast<unsigned short>(std::stoi(envOr("CHAT_SERVER_PORT", "5000")));
 
-        // Configuracion de la API TS (unparche-api) para el POST
-        // fire-and-forget de persistencia de mensajes.
-        const std::string apiHost = envOr("UNPARCHE_API_HOST", "unparche-api.example.workers.dev");
-        const std::string apiPort = envOr("UNPARCHE_API_PORT", "443");
-        const std::string apiTarget = envOr("UNPARCHE_API_MENSAJES_TARGET", "/internal/mensajes");
-        const std::string internalToken = envOr("UNPARCHE_INTERNAL_TOKEN", "");
+        const std::string apiHost = envOr("UNPARCHE_API_HOST", "127.0.0.1");
+        const std::string apiPort = envOr("UNPARCHE_API_PORT", "8787");
+        const bool apiUseTls = envFlag("UNPARCHE_API_USE_TLS", false);
+        const std::string eventIdsTarget =
+            envOr("UNPARCHE_API_EVENT_IDS_TARGET", "/eventos/ids-actuales");
 
-        HttpNotifier notifier(io_context, apiHost, apiPort, apiTarget, internalToken);
         ChatRegistry registry;
+        std::vector<int> eventIds = apiBackend::getCurrentEventIds(
+            apiHost,
+            apiPort,
+            apiUseTls,
+            eventIdsTarget);
+        registry.registerEvents(eventIds);
 
         tcp::endpoint endpoint(tcp::v4(), port);
         tcp::acceptor acceptor(io_context, endpoint);
 
         std::cout << "Chat server escuchando en puerto " << port << std::endl;
-        std::cout << "Persistencia -> https://" << apiHost << apiTarget << std::endl;
+        std::cout << "Chats registrados: " << eventIds.size() << std::endl;
 
         do_accept(io_context, acceptor, registry);
 
