@@ -7,6 +7,7 @@ class User {
     required this.lastName,
     required this.career,
     this.personalInfo,
+    this.photoUrl,
     this.role = 'ESTUDIANTE',
     this.createdAt,
   });
@@ -17,6 +18,7 @@ class User {
   final String lastName;
   final String career;
   final String? personalInfo;
+  final String? photoUrl;
   final String role;
   final DateTime? createdAt;
 
@@ -35,6 +37,7 @@ class User {
       lastName: json['apellido'] as String,
       career: json['carrera'] as String,
       personalInfo: json['informacion_personal'] as String?,
+      photoUrl: json['foto_url'] as String?,
       role: json['rol'] as String? ?? 'ESTUDIANTE',
       createdAt: json['fecha_creacion'] != null
           ? DateTime.parse(json['fecha_creacion'] as String)
@@ -51,6 +54,7 @@ class User {
       'apellido': lastName,
       'carrera': career,
       'informacion_personal': personalInfo,
+      'foto_url': photoUrl,
       'rol': role,
       if (createdAt != null) 'fecha_creacion': createdAt!.toIso8601String(),
     };
@@ -64,6 +68,7 @@ class User {
     String? lastName,
     String? career,
     String? personalInfo,
+    String? photoUrl,
     String? role,
     DateTime? createdAt,
   }) {
@@ -74,6 +79,7 @@ class User {
       lastName: lastName ?? this.lastName,
       career: career ?? this.career,
       personalInfo: personalInfo ?? this.personalInfo,
+      photoUrl: photoUrl ?? this.photoUrl,
       role: role ?? this.role,
       createdAt: createdAt ?? this.createdAt,
     );
