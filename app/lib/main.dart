@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart';
+import 'package:provider/provider.dart';
 
+import 'auth_service.dart';
 import 'create_event_screen.dart';
 import 'event_api_client.dart';
+import 'login_screen.dart';
 import 'profile_screen.dart';
 import 'view_events_screen.dart';
 import 'view_groups_screen.dart';
@@ -72,15 +75,18 @@ class UNparcheApp extends StatelessWidget {
     const background = Color(0xFFFBF5F2);
     const ink = Color(0xFF263020);
 
-    return MaterialApp(
-      title: 'UNparche',
-      debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: ink, surface: background),
-        scaffoldBackgroundColor: background,
-        useMaterial3: true,
+    return ChangeNotifierProvider(
+      create: (_) => AuthService(),
+      child: MaterialApp(
+        title: 'UNparche',
+        debugShowCheckedModeBanner: false,
+        theme: ThemeData(
+          colorScheme: ColorScheme.fromSeed(seedColor: ink, surface: background),
+          scaffoldBackgroundColor: background,
+          useMaterial3: true,
+        ),
+        home: const CampusMapScreen(),
       ),
-      home: const CampusMapScreen(),
     );
   }
 }
@@ -779,7 +785,7 @@ class MissingMapboxTokenView extends StatelessWidget {
 class MapHeader extends StatelessWidget {
   const MapHeader({super.key});
 
-  /// Navega a la pantalla de perfil del usuario
+  /// Navigate to profile screen (or login if not authenticated)
   void _openProfile(BuildContext context) {
     Navigator.of(context).push(
       MaterialPageRoute(
@@ -788,8 +794,20 @@ class MapHeader extends StatelessWidget {
     );
   }
 
+  /// Navigate to login screen
+  void _openLogin(BuildContext context) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => const LoginScreen(),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    final authService = context.watch<AuthService>();
+    final isAuthenticated = authService.isAuthenticated;
+
     return Container(
       height: 58,
       decoration: BoxDecoration(
@@ -806,16 +824,51 @@ class MapHeader extends StatelessWidget {
       child: Row(
         children: [
           const SizedBox(width: 12),
-          // Avatar del usuario con funcionalidad de tap para abrir perfil
-          InkWell(
-            onTap: () => _openProfile(context),
-            borderRadius: BorderRadius.circular(17),
-            child: CircleAvatar(
-              radius: 17,
-              backgroundColor: CampusMapScreen._accent,
-              child: Icon(Icons.person, color: CampusMapScreen._ink, size: 20),
+          // Show login button or user avatar based on authentication state
+          if (isAuthenticated)
+            // User avatar (tap to open profile)
+            InkWell(
+              onTap: () => _openProfile(context),
+              borderRadius: BorderRadius.circular(17),
+              child: CircleAvatar(
+                radius: 17,
+                backgroundColor: CampusMapScreen._accent,
+                backgroundImage: authService.currentUser?.photoUrl != null
+                    ? NetworkImage(authService.currentUser!.photoUrl!)
+                    : null,
+                child: authService.currentUser?.photoUrl == null
+                    ? const Icon(Icons.person, color: CampusMapScreen._ink, size: 20)
+                    : null,
+              ),
+            )
+          else
+            // Login button
+            InkWell(
+              onTap: () => _openLogin(context),
+              borderRadius: BorderRadius.circular(17),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(
+                  color: CampusMapScreen._ink,
+                  borderRadius: BorderRadius.circular(17),
+                ),
+                child: const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.login, color: Colors.white, size: 16),
+                    SizedBox(width: 4),
+                    Text(
+                      'Iniciar sesión',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             ),
-          ),
           const Expanded(
             child: Center(
               child: Text(
