@@ -37,6 +37,12 @@ dependencies:
   mapbox_maps_flutter:
     path: vendor/mapbox_maps_flutter
   flutter_plugin_android_lifecycle: 2.0.29
+  provider: ^6.1.2
+  http: ^1.2.0
+
+  # google auth
+  google_sign_in: ^6.2.1
+
 
 dev_dependencies:
   flutter_test:
