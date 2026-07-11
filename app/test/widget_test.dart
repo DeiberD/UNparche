@@ -4,10 +4,42 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:app/main.dart';
 import 'package:app/event_api_client.dart';
 import 'package:app/event_cluster_data.dart';
+import 'package:app/location_picker_state.dart';
 
 void main() {
+  test('location picker states preserve valid workflow transitions', () {
+    const selection = LocationSelection(
+      latitude: 4.6382,
+      longitude: -74.084,
+      label: 'Campus UNAL',
+    );
+
+    const initial = AwaitingLocationState();
+    expect(initial.canConfirm, isFalse);
+
+    final selected = initial.onLocationSelected(selection);
+    expect(selected, isA<LocationSelectedState>());
+    expect(selected.selection, selection);
+    expect(selected.canConfirm, isTrue);
+    expect(selected.message, 'Campus UNAL');
+
+    final failed = selected.onMapFailure('Mapbox no disponible');
+    expect(failed, isA<LocationPickerErrorState>());
+    expect(failed.hasError, isTrue);
+    expect(failed.selection, selection);
+
+    final recovered = failed.onMapReady();
+    expect(recovered, isA<LocationSelectedState>());
+    expect(recovered.selection, selection);
+    expect(recovered.hasError, isFalse);
+  });
+
   test('builds clusterable GeoJSON only for events with a location', () {
-    final eventWithLocation = _event(id: 7, latitude: 4.638, longitude: -74.084);
+    final eventWithLocation = _event(
+      id: 7,
+      latitude: 4.638,
+      longitude: -74.084,
+    );
     final eventWithoutLocation = _event(id: 8);
 
     final geoJson = buildEventClusterFeatureCollection([
