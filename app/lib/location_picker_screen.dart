@@ -1,18 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart' hide Size;
 
-class LocationSelection {
-  const LocationSelection({
-    required this.latitude,
-    required this.longitude,
-    required this.label,
-  });
+import 'location_picker_state.dart';
+export 'location_picker_state.dart' show LocationSelection;
 
-  final double latitude;
-  final double longitude;
-  final String label;
-}
-
+/// Mapbox screen used to choose the exact campus location of an event.
+///
+/// The screen acts as the context of the State pattern. It delegates the
+/// workflow status, confirmation availability and transitions to
+/// [LocationPickerState] implementations.
 class LocationPickerScreen extends StatefulWidget {
   const LocationPickerScreen({super.key, this.initialLocation});
 
@@ -23,6 +19,7 @@ class LocationPickerScreen extends StatefulWidget {
 }
 
 class _LocationPickerScreenState extends State<LocationPickerScreen> {
+  // Colors and geographic limits shared by every picker state.
   static const _background = Color(0xFFFBF5F2);
   static const _surface = Color(0xFFF3ECE8);
   static const _ink = Color(0xFF263020);
@@ -37,17 +34,21 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
 
   CircleAnnotationManager? _circleManager;
   CircleAnnotation? _selectedMarker;
-  LocationSelection? _selectedLocation;
-  String? _statusMessage = 'Toca el mapa para fijar la ubicacion.';
-  bool _hasMapError = false;
+  late LocationPickerState _pickerState;
 
   @override
   void initState() {
     super.initState();
-    _selectedLocation = widget.initialLocation;
+
+    // Restore an existing location when the user reopens the picker.
+    final initialLocation = widget.initialLocation;
+    _pickerState = initialLocation == null
+        ? const AwaitingLocationState()
+        : LocationSelectedState(initialLocation);
   }
 
   Future<void> _onMapCreated(MapboxMap mapboxMap) async {
+    // Keep every selectable coordinate inside the UNAL Bogota campus.
     await mapboxMap.setBounds(
       CameraBoundsOptions(
         bounds: _campusBounds,
@@ -64,13 +65,16 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
       TapInteraction.onMap(_onMapTap),
       interactionID: 'location-picker-tap',
     );
-    final selected = _selectedLocation;
+
+    // Recreate the marker when editing a previously selected location.
+    final selected = _pickerState.selection;
     if (selected != null) {
       await _setSelectedLocation(selected.latitude, selected.longitude);
     }
   }
 
   Future<void> _setSelectedLocation(double latitude, double longitude) async {
+    // Convert the raw Mapbox coordinate into the value returned to the form.
     final selection = LocationSelection(
       latitude: latitude,
       longitude: longitude,
@@ -99,13 +103,13 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
     }
 
     setState(() {
-      _selectedLocation = selection;
-      _statusMessage = selection.label;
-      _hasMapError = false;
+      _pickerState = _pickerState.onLocationSelected(selection);
     });
   }
 
   void _onMapTap(MapContentGestureContext context) {
+    // Mapbox stores coordinates as longitude/latitude; the domain model uses
+    // named fields to avoid accidentally swapping them.
     final coordinates = context.point.coordinates;
     _setSelectedLocation(
       coordinates.lat.toDouble(),
@@ -114,7 +118,7 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
   }
 
   void _confirmSelection() {
-    final selected = _selectedLocation;
+    final selected = _pickerState.selection;
     if (selected == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Selecciona un punto dentro del campus.')),
@@ -157,17 +161,14 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
                 onMapCreated: _onMapCreated,
                 onStyleLoadedListener: (_) {
                   setState(() {
-                    _statusMessage =
-                        _selectedLocation?.label ??
-                        'Toca el mapa para fijar la ubicacion.';
-                    _hasMapError = false;
+                    _pickerState = _pickerState.onMapReady();
                   });
                 },
                 onMapLoadErrorListener: (error) {
                   setState(() {
-                    _statusMessage =
-                        'Mapbox: ${error.type.name} - ${error.message}';
-                    _hasMapError = true;
+                    _pickerState = _pickerState.onMapFailure(
+                      'Mapbox: ${error.type.name} - ${error.message}',
+                    );
                   });
                 },
               ),
@@ -177,8 +178,8 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
               right: 16,
               top: 16,
               child: _MapInstructionCard(
-                message: _statusMessage ?? '',
-                hasError: _hasMapError,
+                message: _pickerState.message,
+                hasError: _pickerState.hasError,
               ),
             ),
             Positioned(
@@ -186,7 +187,7 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
               right: 16,
               bottom: 16,
               child: FilledButton.icon(
-                onPressed: _confirmSelection,
+                onPressed: _pickerState.canConfirm ? _confirmSelection : null,
                 icon: const Icon(Icons.check),
                 label: const Text('Usar esta ubicacion'),
                 style: FilledButton.styleFrom(
@@ -207,6 +208,7 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
   }
 }
 
+/// Status card driven by the active [LocationPickerState].
 class _MapInstructionCard extends StatelessWidget {
   const _MapInstructionCard({required this.message, required this.hasError});
 
