@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart' hide Size;
 
+import 'campus_location_map_facade.dart';
 import 'location_picker_state.dart';
 export 'location_picker_state.dart' show LocationSelection;
 
@@ -8,7 +9,8 @@ export 'location_picker_state.dart' show LocationSelection;
 ///
 /// The screen acts as the context of the State pattern. It delegates the
 /// workflow status, confirmation availability and transitions to
-/// [LocationPickerState] implementations.
+/// [LocationPickerState] implementations. Mapbox-specific operations are
+/// delegated to [CampusLocationMapFacade].
 class LocationPickerScreen extends StatefulWidget {
   const LocationPickerScreen({super.key, this.initialLocation});
 
@@ -19,26 +21,19 @@ class LocationPickerScreen extends StatefulWidget {
 }
 
 class _LocationPickerScreenState extends State<LocationPickerScreen> {
-  // Colors and geographic limits shared by every picker state.
+  // Colors shared by the picker UI and its Mapbox facade.
   static const _background = Color(0xFFFBF5F2);
   static const _surface = Color(0xFFF3ECE8);
   static const _ink = Color(0xFF263020);
-  static const _campusLatitude = 4.6382;
-  static const _campusLongitude = -74.0840;
 
-  static final _campusBounds = CoordinateBounds(
-    southwest: Point(coordinates: Position(-74.0985, 4.6255)),
-    northeast: Point(coordinates: Position(-74.0725, 4.6505)),
-    infiniteBounds: false,
-  );
-
-  CircleAnnotationManager? _circleManager;
-  CircleAnnotation? _selectedMarker;
+  late final CampusLocationMapFacade _mapFacade;
   late LocationPickerState _pickerState;
 
   @override
   void initState() {
     super.initState();
+
+    _mapFacade = CampusLocationMapFacade(markerColor: _ink.toARGB32());
 
     // Restore an existing location when the user reopens the picker.
     final initialLocation = widget.initialLocation;
@@ -47,24 +42,15 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
         : LocationSelectedState(initialLocation);
   }
 
-  Future<void> _onMapCreated(MapboxMap mapboxMap) async {
-    // Keep every selectable coordinate inside the UNAL Bogota campus.
-    await mapboxMap.setBounds(
-      CameraBoundsOptions(
-        bounds: _campusBounds,
-        minZoom: 14,
-        maxZoom: 25,
-        minPitch: 0,
-        maxPitch: 45,
-      ),
-    );
+  @override
+  void dispose() {
+    _mapFacade.dispose();
+    super.dispose();
+  }
 
-    _circleManager = await mapboxMap.annotations
-        .createCircleAnnotationManager();
-    mapboxMap.addInteraction(
-      TapInteraction.onMap(_onMapTap),
-      interactionID: 'location-picker-tap',
-    );
+  Future<void> _onMapCreated(MapboxMap mapboxMap) async {
+    // One facade call replaces Mapbox bounds, annotations and interaction setup.
+    await _mapFacade.initialize(mapboxMap, onMapTap: _onMapTap);
 
     // Recreate the marker when editing a previously selected location.
     final selected = _pickerState.selection;
@@ -81,26 +67,7 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
       label: _formatLocationLabel(latitude, longitude),
     );
 
-    final point = Point(coordinates: Position(longitude, latitude));
-    final manager = _circleManager;
-
-    if (manager != null) {
-      final marker = _selectedMarker;
-      if (marker == null) {
-        _selectedMarker = await manager.create(
-          CircleAnnotationOptions(
-            geometry: point,
-            circleRadius: 9,
-            circleColor: _ink.toARGB32(),
-            circleStrokeColor: Colors.white.toARGB32(),
-            circleStrokeWidth: 3,
-          ),
-        );
-      } else {
-        marker.geometry = point;
-        await manager.update(marker);
-      }
-    }
+    await _mapFacade.showSelection(selection);
 
     setState(() {
       _pickerState = _pickerState.onLocationSelected(selection);
@@ -152,12 +119,7 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
               child: MapWidget(
                 key: const ValueKey('locationPickerMap'),
                 styleUri: MapboxStyles.MAPBOX_STREETS,
-                viewport: CameraViewportState(
-                  center: Point(
-                    coordinates: Position(_campusLongitude, _campusLatitude),
-                  ),
-                  zoom: 16,
-                ),
+                viewport: _mapFacade.initialViewport,
                 onMapCreated: _onMapCreated,
                 onStyleLoadedListener: (_) {
                   setState(() {
