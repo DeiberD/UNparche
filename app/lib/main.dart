@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart';
 import 'package:provider/provider.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 import 'auth_service.dart';
 import 'create_event_screen.dart';
@@ -10,7 +11,10 @@ import 'profile_screen.dart';
 import 'view_events_screen.dart';
 import 'view_groups_screen.dart';
 
-const _mapboxAccessToken = String.fromEnvironment('ACCESS_TOKEN');
+// Load from .env file or fall back to --dart-define
+String get _mapboxAccessToken => 
+    dotenv.env['ACCESS_TOKEN'] ?? const String.fromEnvironment('ACCESS_TOKEN');
+
 const _demoUserId = 1;
 
 enum _HomeTab { map, events, groups }
@@ -57,9 +61,20 @@ String _shortDate(DateTime date) {
       '${date.month.toString().padLeft(2, '0')}';
 }
 
-void main() {
+void main() async {
+  // Initialize Flutter bindings
   WidgetsFlutterBinding.ensureInitialized();
 
+  // Load environment variables from .env file
+  // Try loading .env file, but don't fail if it doesn't exist
+  try {
+    await dotenv.load(fileName: ".env");
+  } catch (e) {
+    // If .env file is not found, that's okay - we'll use --dart-define or defaults
+    print('Note: .env file not loaded ($e). Using --dart-define or default values.');
+  }
+
+  // Set Mapbox token if available
   if (_mapboxAccessToken.isNotEmpty) {
     MapboxOptions.setAccessToken(_mapboxAccessToken);
   }
