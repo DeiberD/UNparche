@@ -103,6 +103,7 @@ class EventSummary {
     required this.eventTypeId,
     required this.eventTypeName,
     required this.status,
+    required this.chatEnabled,
   });
 
   factory EventSummary.fromJson(Map<String, dynamic> json) {
@@ -130,6 +131,7 @@ class EventSummary {
       eventTypeId: _toInt(json['id_tipo_evento']),
       eventTypeName: _cleanString(json['tipo_evento_nombre']),
       status: json['estado']?.toString() ?? 'PROGRAMADO',
+      chatEnabled: _toBool(json['chat_habilitado']) ?? false,
     );
   }
 
@@ -156,6 +158,7 @@ class EventSummary {
   final int? eventTypeId;
   final String? eventTypeName;
   final String status;
+  final bool chatEnabled;
 
   bool get hasLocation => latitude != null && longitude != null;
   bool get isPublic => visibility == 'PUBLICA';

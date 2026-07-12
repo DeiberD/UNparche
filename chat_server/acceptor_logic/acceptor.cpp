@@ -8,7 +8,6 @@ void do_accept(asio::io_context& io_context, tcp::acceptor& acceptor, ChatRegist
     acceptor.async_accept(
         [&acceptor, &io_context, &registry](boost::system::error_code error, tcp::socket socket) {
             if (!error) {
-                std::cout<< "Nueva conexión" << std::endl;
                 auto user = std::make_shared<User>(std::move(socket), registry);
                 user->start();
             } else {

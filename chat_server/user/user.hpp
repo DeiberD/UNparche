@@ -1,5 +1,6 @@
 #pragma once
 #include <boost/asio.hpp>
+#include <cstddef>
 #include <memory>
 #include <string>
 #include <deque>
@@ -29,6 +30,10 @@ public:
     const std::string& nickname() const { return nickname_; }
 
 private:
+    std::string logPrefix() const;
+    void logInfo(const std::string& action, const std::string& info = "") const;
+    void logError(const std::string& action, const std::string& info = "") const;
+
     void readLine();
     void handleLine(const std::string& line);
     void handleJoin(int id_evento, const std::string& nickname);
@@ -43,5 +48,8 @@ private:
 
     std::string nickname_;
     bool joined_ = false;
+    bool closed_ = false;
+    std::size_t connectionId_;
+    std::string peer_;
     std::shared_ptr<Chat> chat_; // sala a la que pertenece una vez hace join
 };

@@ -2,6 +2,9 @@
 #include "../user/user.hpp"
 #include <algorithm>
 
+Chat::Chat(int id_evento)
+    : id_evento_(id_evento) {}
+
 void Chat::addUser(const std::shared_ptr<User>& user) {
     users_.push_back(user);
 }
@@ -15,7 +18,7 @@ void Chat::removeUser(User* user) {
 }
 
 void Chat::receiveMessage(const std::string& nickname, const std::string& contenido) {
-    Message message{ nickname, contenido, Message::now_ms() };
+    Message message{ id_evento_, nickname, contenido, Message::now_ms() };
     const std::string jsonLine = message.toJsonLine();
 
     // Guardar en el historial en memoria

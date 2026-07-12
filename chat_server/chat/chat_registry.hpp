@@ -14,6 +14,7 @@ class ChatRegistry {
 public:
     void registerEvents(const std::vector<int>& eventIds);
     std::shared_ptr<Chat> getChat(int id_evento);
+    std::vector<int> registeredEventIds() const;
 
 private:
     std::unordered_map<int, std::shared_ptr<Chat>> chats_;

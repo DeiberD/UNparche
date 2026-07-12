@@ -197,6 +197,7 @@ class _CampusMapScreenState extends State<CampusMapScreen> {
       eventTypeId: event.eventTypeId,
       eventTypeName: null,
       status: 'PROGRAMADO',
+      chatEnabled: event.chatEnabled,
     );
     setState(() {
       _allEvents = [..._allEvents, eventSummary]

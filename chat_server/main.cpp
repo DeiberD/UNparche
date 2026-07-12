@@ -2,6 +2,7 @@
 #include <boost/asio.hpp>
 #include <iostream>
 #include <cstdlib>
+#include <sstream>
 #include "acceptor_logic/acceptor.hpp"
 #include "api_backend/api_backend.hpp"
 #include "chat/chat_registry.hpp"
@@ -23,6 +24,21 @@ std::string envOr(const char* name, std::string defaultValue) {
 bool envFlag(const char* name, bool defaultValue) {
     const std::string value = envOr(name, defaultValue ? "true" : "false");
     return value == "1" || value == "true" || value == "TRUE";
+}
+
+std::string joinIds(const std::vector<int>& ids) {
+    if (ids.empty()) {
+        return "(ninguno)";
+    }
+
+    std::ostringstream oss;
+    for (std::size_t i = 0; i < ids.size(); ++i) {
+        if (i > 0) {
+            oss << ", ";
+        }
+        oss << ids[i];
+    }
+    return oss.str();
 }
 
 } // namespace
@@ -57,6 +73,8 @@ int main()
 
         std::cout << "Chat server escuchando en puerto " << port << std::endl;
         std::cout << "Chats registrados: " << eventIds.size() << std::endl;
+        std::cout << "IDs de eventos con chat registrado: "
+                  << joinIds(registry.registeredEventIds()) << std::endl;
 
         do_accept(io_context, acceptor, registry);
 
