@@ -57,10 +57,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
       // Load user events
       final eventsData = await _apiClient.getUserEvents(userId);
-      final allEvents = [
-        ...eventsData['organized'] ?? [],
-        ...eventsData['attending'] ?? [],
-      ];
+      final organizedEvents = eventsData['organized'] ?? <Event>[];
+      final attendingEvents = eventsData['attending'] ?? <Event>[];
+      
+      final allEvents = [...organizedEvents, ...attendingEvents];
 
       // Filter upcoming events (not yet finished)
       final now = DateTime.now();

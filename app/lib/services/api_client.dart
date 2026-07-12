@@ -1,6 +1,6 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
-import 'package:flutter/foundation.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 import '../models/user.dart';
 import '../models/event.dart';
@@ -11,7 +11,9 @@ import '../models/group_invitation.dart';
 /// API client for UNparche backend
 class ApiClient {
   ApiClient({String? baseUrl})
-      : _baseUrl = baseUrl ?? const String.fromEnvironment('API_URL', defaultValue: 'http://localhost:8787');
+      : _baseUrl = baseUrl ?? 
+          dotenv.env['API_BASE_URL'] ?? 
+          const String.fromEnvironment('API_BASE_URL', defaultValue: 'http://localhost:8787');
 
   final String _baseUrl;
 
