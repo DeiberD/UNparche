@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 
+import 'auth_service.dart';
+import 'profile_screen.dart';
 import 'group_api_client.dart';
 
 class GroupsScreen extends StatefulWidget {
@@ -9,7 +12,6 @@ class GroupsScreen extends StatefulWidget {
   static const surface = Color(0xFFF3ECE8);
   static const ink = Color(0xFF263020);
   static const accent = Color(0xFFEEDDF0);
-  static const demoUserId = 1;
   static const allCategoriesFilter = '__ALL_CATEGORIES__';
 
   final GroupApiClient? groupApiClient;
@@ -46,9 +48,14 @@ class _GroupsScreenState extends State<GroupsScreen> {
     });
 
     try {
+      final authService = context.read<AuthService>();
+      final isAuthenticated = authService.isAuthenticated;
+
       final results = await Future.wait([
         _groupApiClient.fetchGroups(),
-        _groupApiClient.fetchInvitations(userId: GroupsScreen.demoUserId),
+        isAuthenticated
+            ? _groupApiClient.fetchInvitations(userId: authService.currentUser!.id)
+            : Future.value(<GroupInvitation>[]),
       ]);
 
       if (!mounted) {
@@ -103,6 +110,14 @@ class _GroupsScreenState extends State<GroupsScreen> {
       _categoryFilter != null;
 
   Future<void> _openCreateGroup() async {
+    final authService = context.read<AuthService>();
+    if (!authService.isAuthenticated) {
+      Navigator.of(context).push(
+        MaterialPageRoute(builder: (_) => const ProfileScreen()),
+      );
+      return;
+    }
+
     final createdGroup = await Navigator.of(context).push<GroupSummary>(
       MaterialPageRoute(
         builder: (_) => CreateGroupScreen(groupApiClient: _groupApiClient),
@@ -320,13 +335,14 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
     setState(() => _isSaving = true);
 
     try {
+      final authService = context.read<AuthService>();
       final client = widget.groupApiClient ?? GroupApiClient();
       final group = await client.createGroup(
         CreateGroupRequest(
           name: _nameController.text.trim(),
           description: _descriptionController.text.trim(),
           category: _category,
-          adminId: GroupsScreen.demoUserId,
+          adminId: authService.currentUser!.id,
         ),
       );
 
