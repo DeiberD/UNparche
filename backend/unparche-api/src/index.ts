@@ -61,6 +61,13 @@ type CrearMensajeChatBody = {
 	timestamp_ms?: number;
 };
 
+const EVENT_RETENTION_HOURS = 24;
+const expiredEventCondition = `datetime(fecha_fin) <= datetime('now', '-${EVENT_RETENTION_HOURS} hours')`;
+const activeEventCondition = `fecha_eliminacion IS NULL
+				AND datetime(fecha_fin) > datetime('now', '-${EVENT_RETENTION_HOURS} hours')`;
+const activeEventConditionForAlias = (alias: string) => `${alias}.fecha_eliminacion IS NULL
+					AND datetime(${alias}.fecha_fin) > datetime('now', '-${EVENT_RETENTION_HOURS} hours')`;
+
 const corsHeaders = {
 	"Access-Control-Allow-Origin": "*",
 	"Access-Control-Allow-Methods": "GET, POST, PATCH, DELETE, OPTIONS",
@@ -114,6 +121,19 @@ const toBoolean = (value: unknown, defaultValue: boolean) => {
 	return null;
 };
 
+const pruneExpiredEvents = async (db: D1Database) =>
+	db
+		.prepare(
+			`UPDATE evento
+			 SET
+				estado = 'FINALIZADO',
+				fecha_eliminacion = CURRENT_TIMESTAMP,
+				chat_habilitado = 0
+			 WHERE fecha_eliminacion IS NULL
+			 AND ${expiredEventCondition}`
+		)
+		.run();
+
 const selectEventoById = async (db: D1Database, idEvento: number) =>
 	db
 		.prepare(
@@ -134,7 +154,8 @@ const selectEventoById = async (db: D1Database, idEvento: number) =>
 				id_grupo,
 				id_tipo_evento
 			 FROM evento
-			 WHERE id_evento = ?`
+			 WHERE id_evento = ?
+			 AND ${activeEventCondition}`
 		)
 		.bind(idEvento)
 		.first();
@@ -221,6 +242,10 @@ const selectInvitacionGrupoById = async (db: D1Database, idInvitacion: number) =
 		.first();
 
 export default {
+	async scheduled(_event, env, ctx): Promise<void> {
+		ctx.waitUntil(pruneExpiredEvents(env.unparche_db));
+	},
+
 	async fetch(request, env): Promise<Response> {
 		const url = new URL(request.url);
 
@@ -588,7 +613,7 @@ export default {
 					JOIN tipo_evento t ON t.id_tipo_evento = e.id_tipo_evento
 					JOIN grupo g ON g.id_grupo = e.id_grupo
 					WHERE e.id_grupo = ?
-					AND e.fecha_eliminacion IS NULL
+					AND ${activeEventConditionForAlias("e")}
 					ORDER BY e.fecha_inicio DESC`
 				)
 				.bind(idGrupo)
@@ -955,7 +980,7 @@ export default {
 					JOIN tipo_evento t ON t.id_tipo_evento = e.id_tipo_evento
 					LEFT JOIN grupo g ON g.id_grupo = e.id_grupo
 					WHERE e.id_organizador = ?
-					AND e.fecha_eliminacion IS NULL
+					AND ${activeEventConditionForAlias("e")}
 					ORDER BY e.fecha_inicio DESC`
 				)
 				.bind(idUsuario)
@@ -992,7 +1017,7 @@ export default {
 					LEFT JOIN grupo g ON g.id_grupo = e.id_grupo
 					WHERE a.id_usuario = ?
 					AND a.estado = 'CONFIRMADA'
-					AND e.fecha_eliminacion IS NULL
+					AND ${activeEventConditionForAlias("e")}
 					ORDER BY e.fecha_inicio DESC`
 				)
 				.bind(idUsuario)
@@ -1047,7 +1072,7 @@ export default {
 					JOIN tipo_evento t ON t.id_tipo_evento = e.id_tipo_evento
 					LEFT JOIN grupo g ON g.id_grupo = e.id_grupo
 					WHERE e.id_evento = ?
-					AND e.fecha_eliminacion IS NULL`
+					AND ${activeEventConditionForAlias("e")}`
 				)
 				.bind(idEvento)
 				.first();
@@ -1088,7 +1113,7 @@ export default {
 						id_tipo_evento
 					FROM evento
 					WHERE id_evento = ?
-					AND fecha_eliminacion IS NULL`
+					AND ${activeEventCondition}`
 				)
 				.bind(idEvento)
 				.first<{
@@ -1303,7 +1328,7 @@ export default {
 						fecha_eliminacion
 					FROM evento
 					WHERE id_evento = ?
-					AND fecha_eliminacion IS NULL`
+					AND ${activeEventCondition}`
 				)
 				.bind(idEvento)
 				.first();
@@ -1389,6 +1414,22 @@ export default {
 					{ ok: false, error: "estado debe ser CONFIRMADA o CANCELADA." },
 					{ status: 400 }
 				);
+			}
+
+			const evento = await env.unparche_db
+				.prepare(
+					`SELECT
+						id_evento,
+						chat_habilitado
+					FROM evento
+					WHERE id_evento = ?
+					AND ${activeEventCondition}`
+				)
+				.bind(idEvento)
+				.first();
+
+			if (!evento) {
+				return json({ ok: false, error: "Evento no encontrado o finalizado." }, { status: 404 });
 			}
 
 			try {
@@ -1590,14 +1631,14 @@ export default {
 		}
 
 
-		// GET ids de todos los eventos
+		// GET ids de todos los eventos actuales con chat habilitado
 		if (request.method === "GET" && url.pathname === "/eventos/ids-actuales") {
 			const eventosActuales = await env.unparche_db
 				.prepare(
 					`SELECT
 						id_evento
 					FROM evento
-					WHERE fecha_eliminacion IS NULL
+					WHERE ${activeEventCondition}
 					AND estado IN ('PROGRAMADO', 'EN_CURSO')
 					AND chat_habilitado = 1
 					ORDER BY fecha_inicio ASC`
@@ -1605,6 +1646,71 @@ export default {
 				.all<{ id_evento: number }>();
 
 			return json(eventosActuales.results.map((evento) => evento.id_evento));
+		}
+
+		// GET eventos
+		if (request.method === "GET" && url.pathname === "/eventos") {
+			const idUsuarioParam = url.searchParams.get("id_usuario");
+			const idUsuario = idUsuarioParam === null ? null : Number(idUsuarioParam);
+
+			if (idUsuarioParam !== null && !Number.isInteger(idUsuario)) {
+				return json(
+					{ ok: false, error: "id_usuario debe ser entero." },
+					{ status: 400 }
+				);
+			}
+
+			const asistenciaSelect = idUsuario === null
+				? `NULL AS estado_asistencia,
+						NULL AS fecha_confirmacion`
+				: `a.estado AS estado_asistencia,
+						a.fecha_confirmacion`;
+			const asistenciaJoin = idUsuario === null
+				? ""
+				: `LEFT JOIN asistencia a
+					ON a.id_evento = e.id_evento
+					AND a.id_usuario = ?`;
+			const eventosQuery = `SELECT
+				e.id_evento,
+				e.titulo,
+				e.descripcion,
+				e.fecha_inicio,
+				e.duracion_minutos,
+				e.fecha_fin,
+				e.fecha_publicacion,
+				e.latitud,
+				e.longitud,
+				e.visibilidad,
+				e.chat_habilitado,
+				e.estado,
+				e.id_organizador,
+				u.nombre || ' ' || u.apellido AS organizador_nombre,
+				u.correo_institucional AS organizador_correo,
+				u.carrera AS organizador_carrera,
+				u.informacion_personal AS organizador_informacion,
+				e.id_grupo,
+				g.nombre AS grupo_nombre,
+				g.descripcion AS grupo_descripcion,
+				g.categoria AS grupo_categoria,
+				g.es_oficial AS grupo_es_oficial,
+				g.estado_verificacion AS grupo_estado_verificacion,
+				e.id_tipo_evento,
+				t.nombre AS tipo_evento_nombre,
+				t.icono_svg AS tipo_evento_icono,
+				${asistenciaSelect}
+			FROM evento e
+			JOIN usuario u ON u.id_usuario = e.id_organizador
+			JOIN tipo_evento t ON t.id_tipo_evento = e.id_tipo_evento
+			LEFT JOIN grupo g ON g.id_grupo = e.id_grupo
+			${asistenciaJoin}
+			WHERE ${activeEventConditionForAlias("e")}
+			ORDER BY e.fecha_inicio DESC`;
+			const eventosStatement = env.unparche_db.prepare(eventosQuery);
+			const eventos = idUsuario === null
+				? await eventosStatement.all()
+				: await eventosStatement.bind(idUsuario).all();
+
+			return json({ ok: true, eventos: eventos.results });
 		}
 		
 
