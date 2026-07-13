@@ -67,24 +67,15 @@ void main() {
     expect(find.text('Mapa'), findsOneWidget);
   });
 
-  testWidgets('opens the HU-27 create event form', (WidgetTester tester) async {
+  testWidgets('requires a session before opening event creation', (
+    WidgetTester tester,
+  ) async {
     await tester.pumpWidget(const UNparcheApp());
 
     await tester.tap(find.byIcon(Icons.add));
     await tester.pumpAndSettle();
 
-    expect(find.text('Nuevo evento'), findsOneWidget);
-    expect(find.text('Titulo del evento'), findsOneWidget);
-    expect(find.text('Descripcion'), findsOneWidget);
-
-    await tester.drag(find.byType(ListView), const Offset(0, -500));
-    await tester.pumpAndSettle();
-
-    expect(find.text('Ubicacion'), findsOneWidget);
-    expect(find.text('Tipo de evento'), findsOneWidget);
-    expect(find.text('Visibilidad'), findsOneWidget);
-    expect(find.text('Chat del evento'), findsOneWidget);
-    expect(find.text('Publicar evento'), findsOneWidget);
+    expect(find.text('Inicia sesión para continuar'), findsOneWidget);
   });
 }
 

@@ -27,6 +27,23 @@ describe("UNparche API worker", () => {
 		await expect(response.json()).resolves.toEqual({ ok: true, message: "UNparche API" });
 	});
 
+	it("rejects Google authentication without an ID token", async () => {
+		const request = new IncomingRequest("http://example.com/auth/google", {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({}),
+		});
+		const ctx = createExecutionContext();
+		const response = await worker.fetch(request, env, ctx);
+		await waitOnExecutionContext(ctx);
+
+		expect(response.status).toBe(400);
+		await expect(response.json()).resolves.toEqual({
+			ok: false,
+			error: "id_token es requerido.",
+		});
+	});
+
 	it("lists groups", async () => {
 		const grupos = [
 			{

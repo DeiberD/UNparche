@@ -763,7 +763,7 @@ class EventDetailScreen extends StatefulWidget {
 
   final EventSummary event;
   final EventApiClient eventApiClient;
-  final int currentUserId;
+  final int? currentUserId;
   final ValueChanged<EventSummary> onAttendanceChanged;
 
   @override
@@ -929,6 +929,11 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
   }
 
   Future<void> _toggleAttendance() async {
+    if (widget.currentUserId == null) {
+      _showAttendanceMessage('Inicia sesión para confirmar tu asistencia.');
+      return;
+    }
+
     if (_isUpdatingAttendance) {
       return;
     }
@@ -945,14 +950,14 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
       if (_event.hasConfirmedAttendance) {
         await widget.eventApiClient.cancelAttendance(
           eventId: eventId,
-          userId: widget.currentUserId,
+          userId: widget.currentUserId!,
         );
         _updateAttendanceStatus('CANCELADA');
         _showAttendanceMessage('Asistencia cancelada.');
       } else {
         await widget.eventApiClient.confirmAttendance(
           eventId: eventId,
-          userId: widget.currentUserId,
+          userId: widget.currentUserId!,
         );
         _updateAttendanceStatus('CONFIRMADA');
         _showAttendanceMessage('Asistencia confirmada.');

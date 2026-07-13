@@ -2,7 +2,9 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart';
+import 'package:provider/provider.dart';
 
+import 'auth_service.dart';
 import 'create_event_screen.dart';
 import 'event_api_client.dart';
 import 'event_cluster_data.dart';
@@ -11,7 +13,6 @@ import 'view_events_screen.dart';
 import 'view_groups_screen.dart';
 
 const _mapboxAccessToken = String.fromEnvironment('ACCESS_TOKEN');
-const _demoUserId = 1;
 
 enum _HomeTab { map, events, groups }
 
@@ -60,6 +61,7 @@ String _shortDate(DateTime date) {
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
 
+  // Set Mapbox token if available
   if (_mapboxAccessToken.isNotEmpty) {
     MapboxOptions.setAccessToken(_mapboxAccessToken);
   }
@@ -75,15 +77,21 @@ class UNparcheApp extends StatelessWidget {
     const background = Color(0xFFFBF5F2);
     const ink = Color(0xFF263020);
 
-    return MaterialApp(
-      title: 'UNparche',
-      debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: ink, surface: background),
-        scaffoldBackgroundColor: background,
-        useMaterial3: true,
+    return ChangeNotifierProvider(
+      create: (_) => AuthService(),
+      child: MaterialApp(
+        title: 'UNparche',
+        debugShowCheckedModeBanner: false,
+        theme: ThemeData(
+          colorScheme: ColorScheme.fromSeed(
+            seedColor: ink,
+            surface: background,
+          ),
+          scaffoldBackgroundColor: background,
+          useMaterial3: true,
+        ),
+        home: const CampusMapScreen(),
       ),
-      home: const CampusMapScreen(),
     );
   }
 }
@@ -113,13 +121,18 @@ class _CampusMapScreenState extends State<CampusMapScreen> {
   @override
   void initState() {
     super.initState();
-    _loadVisibleEvents();
+    // Use addPostFrameCallback so context.read<AuthService>() works correctly
+    // after the widget is fully mounted in the Provider tree.
+    WidgetsBinding.instance.addPostFrameCallback((_) => _loadVisibleEvents());
   }
 
   Future<void> _loadVisibleEvents() async {
-    if (_isLoadingEvents) {
+    if (_isLoadingEvents || !mounted) {
       return;
     }
+
+    // Read auth state before any await to avoid stale context issues.
+    final viewerUserId = context.read<AuthService>().currentUser?.id;
 
     setState(() {
       _isLoadingEvents = true;
@@ -127,7 +140,9 @@ class _CampusMapScreenState extends State<CampusMapScreen> {
     });
 
     try {
-      final events = await _eventApiClient.fetchEvents(viewerUserId: _demoUserId);
+      final events = await _eventApiClient.fetchEvents(
+        viewerUserId: viewerUserId,
+      );
       final sortedEvents = [...events]
         ..sort((a, b) {
           final aStart = a.start;
@@ -169,9 +184,20 @@ class _CampusMapScreenState extends State<CampusMapScreen> {
   }
 
   Future<void> _openCreateEvent(BuildContext context) async {
+    final authService = context.read<AuthService>();
+    if (!authService.isAuthenticated) {
+      Navigator.of(
+        context,
+      ).push(MaterialPageRoute(builder: (_) => const ProfileScreen()));
+      return;
+    }
+
     final messenger = ScaffoldMessenger.of(context);
     final event = await Navigator.of(context).push<CreatedEventDraft>(
-      MaterialPageRoute(builder: (_) => const CreateEventScreen()),
+      MaterialPageRoute(
+        builder: (_) =>
+            CreateEventScreen(organizerId: authService.currentUser!.id),
+      ),
     );
 
     if (event == null) {
@@ -188,11 +214,14 @@ class _CampusMapScreenState extends State<CampusMapScreen> {
       latitude: event.latitude,
       longitude: event.longitude,
       visibility: event.apiVisibility,
-      organizerId: 1,
-      organizerName: 'Usuario comunitario',
-      organizerEmail: null,
-      organizerCareer: null,
-      organizerInfo: null,
+      organizerId: authService.currentUser!.id,
+      organizerName: [
+        authService.currentUser!.name,
+        authService.currentUser!.lastName,
+      ].where((s) => s.isNotEmpty).join(' '),
+      organizerEmail: authService.currentUser!.email,
+      organizerCareer: authService.currentUser!.career,
+      organizerInfo: authService.currentUser!.personalInfo,
       groupId: null,
       groupName: null,
       groupDescription: null,
@@ -362,12 +391,13 @@ class _CampusMapScreenState extends State<CampusMapScreen> {
   }
 
   Future<void> _openEventDetails(EventSummary event) async {
+    final authService = context.read<AuthService>();
     final shouldOpenLocation = await Navigator.of(context).push<bool>(
       MaterialPageRoute(
         builder: (_) => EventDetailScreen(
           event: event,
           eventApiClient: _eventApiClient,
-          currentUserId: _demoUserId,
+          currentUserId: authService.currentUser?.id,
           onAttendanceChanged: _replaceEvent,
         ),
       ),
@@ -383,13 +413,17 @@ class _CampusMapScreenState extends State<CampusMapScreen> {
 
   void _replaceEvent(EventSummary updatedEvent) {
     setState(() {
-      _allEvents = _allEvents
-          .map((event) => event.id == updatedEvent.id ? updatedEvent : event)
-          .toList()
-        ..sort(
-          (a, b) =>
-              (a.start ?? DateTime(9999)).compareTo(b.start ?? DateTime(9999)),
-        );
+      _allEvents =
+          _allEvents
+              .map(
+                (event) => event.id == updatedEvent.id ? updatedEvent : event,
+              )
+              .toList()
+            ..sort(
+              (a, b) => (a.start ?? DateTime(9999)).compareTo(
+                b.start ?? DateTime(9999),
+              ),
+            );
 
       if (_focusedEvent?.id == updatedEvent.id) {
         _focusedEvent = updatedEvent;
@@ -565,7 +599,7 @@ class _UNALMapState extends State<UNALMap> {
     mapboxMap.addInteraction(
       TapInteraction(
         FeaturesetDescriptor(layerId: unclusteredEventsLayerId),
-        (feature, _) => _handleEventTap(feature.properties),
+        (feature, _) => _handleEventTap(feature),
       ),
       interactionID: _eventTapInteractionId,
     );
@@ -626,79 +660,104 @@ class _UNALMapState extends State<UNALMap> {
       return;
     }
 
-    await mapboxMap.style.addSource(
-      GeoJsonSource(
-        id: eventClusterSourceId,
-        data: jsonEncode(buildEventClusterFeatureCollection(widget.events)),
-        cluster: true,
-        clusterRadius: eventClusterRadius,
-        clusterMaxZoom: eventClusterMaxZoom,
-        clusterMinPoints: 2,
-      ),
+    final sourceExists = await mapboxMap.style.styleSourceExists(
+      eventClusterSourceId,
     );
-    await mapboxMap.style.addLayer(
-      CircleLayer(
-        id: eventClustersLayerId,
-        sourceId: eventClusterSourceId,
-        filter: const ['has', 'point_count'],
-        circleColor: CampusMapScreen._ink.toARGB32(),
-        circleRadiusExpression: const [
-          'step',
-          ['get', 'point_count'],
-          18.0,
-          10,
-          23.0,
-          25,
-          28.0,
-        ],
-        circleStrokeColor: Colors.white.toARGB32(),
-        circleStrokeWidth: 3,
-      ),
+    if (!sourceExists) {
+      await mapboxMap.style.addSource(
+        GeoJsonSource(
+          id: eventClusterSourceId,
+          data: jsonEncode(buildEventClusterFeatureCollection(widget.events)),
+          cluster: true,
+          clusterRadius: eventClusterRadius,
+          clusterMaxZoom: eventClusterMaxZoom,
+          clusterMinPoints: 2,
+        ),
+      );
+    }
+
+    final clustersExist = await mapboxMap.style.styleLayerExists(
+      eventClustersLayerId,
     );
-    await mapboxMap.style.addLayer(
-      SymbolLayer(
-        id: eventClusterCountLayerId,
-        sourceId: eventClusterSourceId,
-        filter: const ['has', 'point_count'],
-        textFieldExpression: const ['get', 'point_count_abbreviated'],
-        textSize: 13,
-        textColor: Colors.white.toARGB32(),
-        textAllowOverlap: true,
-      ),
+    if (!clustersExist) {
+      await mapboxMap.style.addLayer(
+        CircleLayer(
+          id: eventClustersLayerId,
+          sourceId: eventClusterSourceId,
+          filter: const ['has', 'point_count'],
+          circleColor: CampusMapScreen._ink.toARGB32(),
+          circleRadiusExpression: const [
+            'step',
+            ['get', 'point_count'],
+            18.0,
+            10,
+            23.0,
+            25,
+            28.0,
+          ],
+          circleStrokeColor: Colors.white.toARGB32(),
+          circleStrokeWidth: 3,
+        ),
+      );
+    }
+
+    final countExist = await mapboxMap.style.styleLayerExists(
+      eventClusterCountLayerId,
     );
-    await mapboxMap.style.addLayer(
-      CircleLayer(
-        id: unclusteredEventsLayerId,
-        sourceId: eventClusterSourceId,
-        filter: const [
-          '!',
-          ['has', 'point_count'],
-        ],
-        circleColorExpression: const [
-          'match',
-          ['get', 'event_type_id'],
-          1,
-          '#4267B2',
-          2,
-          '#8B4C9D',
-          3,
-          '#2E7D32',
-          4,
-          '#C2410C',
-          '#263020',
-        ],
-        circleRadius: 8,
-        circleStrokeColor: Colors.white.toARGB32(),
-        circleStrokeWidth: 3,
-      ),
+    if (!countExist) {
+      await mapboxMap.style.addLayer(
+        SymbolLayer(
+          id: eventClusterCountLayerId,
+          sourceId: eventClusterSourceId,
+          filter: const ['has', 'point_count'],
+          textFieldExpression: const ['get', 'point_count_abbreviated'],
+          textSize: 13,
+          textColor: Colors.white.toARGB32(),
+          textAllowOverlap: true,
+        ),
+      );
+    }
+
+    final unclusteredExist = await mapboxMap.style.styleLayerExists(
+      unclusteredEventsLayerId,
     );
+    if (!unclusteredExist) {
+      await mapboxMap.style.addLayer(
+        CircleLayer(
+          id: unclusteredEventsLayerId,
+          sourceId: eventClusterSourceId,
+          filter: const [
+            '!',
+            ['has', 'point_count'],
+          ],
+          circleColorExpression: const [
+            'match',
+            ['get', 'event_type_id'],
+            1,
+            '#4267B2',
+            2,
+            '#8B4C9D',
+            3,
+            '#2E7D32',
+            4,
+            '#C2410C',
+            '#263020',
+          ],
+          circleRadius: 8,
+          circleStrokeColor: Colors.white.toARGB32(),
+          circleStrokeWidth: 3,
+        ),
+      );
+    }
 
     _eventLayersReady = true;
     await _syncEventMarkers();
   }
 
-  void _handleEventTap(Map<String, Object?> properties) {
-    final event = _eventsByFeatureKey[properties['event_key']?.toString()];
+  void _handleEventTap(FeaturesetFeature feature) {
+    final eventKey =
+        feature.properties['event_key']?.toString() ?? feature.id?.id;
+    final event = _eventsByFeatureKey[eventKey];
     if (event != null) {
       widget.onEventTap(event);
     }
@@ -720,10 +779,13 @@ class _UNALMapState extends State<UNALMap> {
       'properties': feature.properties,
     };
 
+    final pointCountVal = feature.properties['point_count'];
+    final pointCount = pointCountVal is num ? pointCountVal.toInt() : null;
+
     final leaves = await mapboxMap.getGeoJsonClusterLeaves(
       eventClusterSourceId,
       clusterFeature,
-      feature.properties['point_count'] as int?,
+      pointCount,
       0,
     );
     final events = <EventSummary>[];
@@ -732,7 +794,9 @@ class _UNALMapState extends State<UNALMap> {
       if (properties is! Map) {
         continue;
       }
-      final event = _eventsByFeatureKey[properties['event_key']?.toString()];
+      final event =
+          _eventsByFeatureKey[properties['event_key']?.toString() ??
+              leaf?['id']?.toString()];
       if (event != null) {
         events.add(event);
       }
@@ -984,17 +1048,19 @@ class MissingMapboxTokenView extends StatelessWidget {
 class MapHeader extends StatelessWidget {
   const MapHeader({super.key});
 
-  /// Navega a la pantalla de perfil del usuario
+  /// Navigate to profile screen (or login if not authenticated)
   void _openProfile(BuildContext context) {
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => const ProfileScreen(),
-      ),
-    );
+    Navigator.of(
+      context,
+    ).push(MaterialPageRoute(builder: (_) => const ProfileScreen()));
   }
 
   @override
   Widget build(BuildContext context) {
+    final authService = context.watch<AuthService>();
+    final user = authService.currentUser;
+    final isAuthenticated = authService.isAuthenticated;
+
     return Container(
       height: 58,
       decoration: BoxDecoration(
@@ -1011,14 +1077,52 @@ class MapHeader extends StatelessWidget {
       child: Row(
         children: [
           const SizedBox(width: 12),
-          // Avatar del usuario con funcionalidad de tap para abrir perfil
+          // Profile / Login button
           InkWell(
             onTap: () => _openProfile(context),
-            borderRadius: BorderRadius.circular(17),
-            child: CircleAvatar(
-              radius: 17,
-              backgroundColor: CampusMapScreen._accent,
-              child: Icon(Icons.person, color: CampusMapScreen._ink, size: 20),
+            borderRadius: BorderRadius.circular(24),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (isAuthenticated) ...[
+                    CircleAvatar(
+                      radius: 17,
+                      backgroundColor: CampusMapScreen._accent,
+                      backgroundImage: user?.photoUrl != null
+                          ? NetworkImage(user!.photoUrl!)
+                          : null,
+                      child: user?.photoUrl == null
+                          ? const Icon(
+                              Icons.person,
+                              color: CampusMapScreen._ink,
+                              size: 20,
+                            )
+                          : null,
+                    ),
+                  ] else ...[
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 6,
+                      ),
+                      decoration: BoxDecoration(
+                        color: CampusMapScreen._ink,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: const Text(
+                        'Iniciar sesión',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
             ),
           ),
           const Expanded(

@@ -21,11 +21,13 @@ class EventApiClient {
   final HttpClient _httpClient;
 
   Future<List<EventSummary>> fetchEvents({int? viewerUserId}) async {
-    final eventsUri = _baseUri.resolve('/eventos').replace(
-      queryParameters: viewerUserId == null
-          ? null
-          : {'id_usuario': viewerUserId.toString()},
-    );
+    final eventsUri = _baseUri
+        .resolve('/eventos')
+        .replace(
+          queryParameters: viewerUserId == null
+              ? null
+              : {'id_usuario': viewerUserId.toString()},
+        );
     final request = await _httpClient.getUrl(eventsUri);
     final response = await request.close();
     final responseBody = await response.transform(utf8.decoder).join();
@@ -62,9 +64,7 @@ class EventApiClient {
       _baseUri.resolve('/eventos/$eventId/asistencias'),
     );
     request.headers.contentType = ContentType.json;
-    request.write(
-      jsonEncode({'id_usuario': userId, 'estado': 'CONFIRMADA'}),
-    );
+    request.write(jsonEncode({'id_usuario': userId, 'estado': 'CONFIRMADA'}));
 
     final response = await request.close();
     return _decodeJsonMapResponse(
