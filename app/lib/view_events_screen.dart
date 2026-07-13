@@ -16,7 +16,7 @@ String get _chatServerHost {
     return _configuredChatServerHost;
   }
 
-  return '192.168.1.118';
+  return '186.31.167.146'; // IP PÚBLICA SERVER CHAT
 }
 
 enum EventTimeScope { future, past }
