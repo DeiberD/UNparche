@@ -874,14 +874,15 @@ export default {
 					await env.unparche_db
 						.prepare(
 							`UPDATE usuario
-							 SET google_id = ?,
-							     proveedor_auth = 'GOOGLE',
-							     correo_verificado = 1,
-							     foto_perfil = COALESCE(foto_perfil, ?)
-							 WHERE id_usuario = ?`
+							SET google_id = ?,
+								proveedor_auth = 'GOOGLE',
+								correo_verificado = 1,
+								foto_perfil = ?
+							WHERE id_usuario = ?`
 						)
-						.bind(googleId, picture, user.id_usuario)
+						.bind(googleId, picture || user.foto_url, user.id_usuario)
 						.run();
+
 
 					// Refresh user data
 					user = await env.unparche_db
@@ -988,7 +989,7 @@ export default {
 
 			return json({ ok: true, usuario });
 		}
-		
+
 		// GET eventos relacionados con un usuario (usuarios/:id/eventos)
 		const eventosUsuarioMatch = url.pathname.match(/^\/usuarios\/(\d+)\/eventos$/);
 
@@ -1618,7 +1619,7 @@ export default {
 				asistencia,
 			});
 		}
-	
+
 		// GET asistencias de un evento y confirmados (/eventos/:id/asistencias)
 		const asistenciasEventoMatch = url.pathname.match(/^\/eventos\/(\d+)\/asistencias$/);
 
@@ -1749,7 +1750,7 @@ export default {
 
 			return json({ ok: true, eventos: eventos.results });
 		}
-		
+
 
 		// POST eventos
 		if (request.method === "POST" && url.pathname === "/eventos") {
