@@ -81,6 +81,84 @@ describe("UNparche API worker", () => {
 		await expect(response.json()).resolves.toEqual({ ok: true, tipos_evento: tiposEvento });
 	});
 
+	it("lists only lifecycle-active events", async () => {
+		const eventos = [
+			{
+				id_evento: 1,
+				titulo: "Torneo de ajedrez",
+				fecha_fin: "2026-07-10T16:00:00.000Z",
+				fecha_eliminacion: null,
+				chat_habilitado: 1,
+			},
+		];
+		let sql = "";
+		const request = new IncomingRequest("http://example.com/eventos");
+		const ctx = createExecutionContext();
+		const testEnv = {
+			unparche_db: {
+				prepare: (query: string) => {
+					sql = query;
+
+					return {
+						all: async () => ({ results: eventos }),
+						bind: () => ({
+							all: async () => ({ results: eventos }),
+						}),
+					};
+				},
+			} as unknown as D1Database,
+		} as Env & { unparche_db: D1Database };
+
+		const response = await worker.fetch(request, testEnv, ctx);
+		await waitOnExecutionContext(ctx);
+
+		expect(response.status).toBe(200);
+		expect(sql).toContain("e.fecha_eliminacion IS NULL");
+		expect(sql).toContain("datetime(e.fecha_fin) > datetime('now', '-24 hours')");
+		await expect(response.json()).resolves.toEqual({ ok: true, eventos });
+	});
+
+	it("lists events with attendance status for a user", async () => {
+		const eventos = [
+			{
+				id_evento: 1,
+				titulo: "Torneo de ajedrez",
+				estado_asistencia: "CONFIRMADA",
+				fecha_confirmacion: "2026-07-02 20:30:00",
+			},
+		];
+		let sql = "";
+		let boundUserId: unknown = null;
+		const request = new IncomingRequest("http://example.com/eventos?id_usuario=2");
+		const ctx = createExecutionContext();
+		const testEnv = {
+			unparche_db: {
+				prepare: (query: string) => {
+					sql = query;
+
+					return {
+						bind: (idUsuario: unknown) => {
+							boundUserId = idUsuario;
+
+							return {
+								all: async () => ({ results: eventos }),
+							};
+						},
+					};
+				},
+			} as unknown as D1Database,
+		} as Env & { unparche_db: D1Database };
+
+		const response = await worker.fetch(request, testEnv, ctx);
+		await waitOnExecutionContext(ctx);
+
+		expect(response.status).toBe(200);
+		expect(boundUserId).toBe(2);
+		expect(sql).toContain("a.estado AS estado_asistencia");
+		expect(sql).toContain("LEFT JOIN asistencia a");
+		await expect(response.json()).resolves.toEqual({ ok: true, eventos });
+	});
+
 	it("gets a group by id", async () => {
 		const grupo = {
 			id_grupo: 1,
@@ -222,6 +300,10 @@ describe("UNparche API worker", () => {
 	});
 
 	it("registers event attendance", async () => {
+		const evento = {
+			id_evento: 1,
+			chat_habilitado: 1,
+		};
 		const asistencia = {
 			id_asistencia: 1,
 			id_usuario: 2,
@@ -247,6 +329,14 @@ describe("UNparche API worker", () => {
 					if (prepareCall === 1) {
 						return {
 							bind: () => ({
+								first: async () => evento,
+							}),
+						};
+					}
+
+					if (prepareCall === 2) {
+						return {
+							bind: () => ({
 								run: async () => ({ success: true }),
 							}),
 						};
@@ -270,5 +360,29 @@ describe("UNparche API worker", () => {
 			message: "Asistencia registrada correctamente.",
 			asistencia,
 		});
+	});
+
+	it("prunes events that ended more than 24 hours ago on schedule", async () => {
+		let sql = "";
+		const ctx = createExecutionContext();
+		const testEnv = {
+			unparche_db: {
+				prepare: (query: string) => {
+					sql = query;
+
+					return {
+						run: async () => ({ success: true, meta: { changes: 2 } }),
+					};
+				},
+			} as unknown as D1Database,
+		} as Env & { unparche_db: D1Database };
+
+		await worker.scheduled?.({} as ScheduledController, testEnv, ctx);
+		await waitOnExecutionContext(ctx);
+
+		expect(sql).toContain("estado = 'FINALIZADO'");
+		expect(sql).toContain("fecha_eliminacion = CURRENT_TIMESTAMP");
+		expect(sql).toContain("chat_habilitado = 0");
+		expect(sql).toContain("datetime(fecha_fin) <= datetime('now', '-24 hours')");
 	});
 });

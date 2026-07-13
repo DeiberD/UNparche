@@ -20,8 +20,13 @@ class EventApiClient {
   final Uri _baseUri;
   final HttpClient _httpClient;
 
-  Future<List<EventSummary>> fetchEvents() async {
-    final request = await _httpClient.getUrl(_baseUri.resolve('/eventos'));
+  Future<List<EventSummary>> fetchEvents({int? viewerUserId}) async {
+    final eventsUri = _baseUri.resolve('/eventos').replace(
+      queryParameters: viewerUserId == null
+          ? null
+          : {'id_usuario': viewerUserId.toString()},
+    );
+    final request = await _httpClient.getUrl(eventsUri);
     final response = await request.close();
     final responseBody = await response.transform(utf8.decoder).join();
     final decoded = responseBody.isEmpty ? null : jsonDecode(responseBody);
@@ -49,6 +54,40 @@ class EventApiClient {
         .toList();
   }
 
+  Future<Map<String, dynamic>> confirmAttendance({
+    required int eventId,
+    required int userId,
+  }) async {
+    final request = await _httpClient.postUrl(
+      _baseUri.resolve('/eventos/$eventId/asistencias'),
+    );
+    request.headers.contentType = ContentType.json;
+    request.write(
+      jsonEncode({'id_usuario': userId, 'estado': 'CONFIRMADA'}),
+    );
+
+    final response = await request.close();
+    return _decodeJsonMapResponse(
+      response,
+      fallbackErrorMessage: 'No se pudo confirmar la asistencia.',
+    );
+  }
+
+  Future<Map<String, dynamic>> cancelAttendance({
+    required int eventId,
+    required int userId,
+  }) async {
+    final request = await _httpClient.deleteUrl(
+      _baseUri.resolve('/eventos/$eventId/asistencias/$userId'),
+    );
+
+    final response = await request.close();
+    return _decodeJsonMapResponse(
+      response,
+      fallbackErrorMessage: 'No se pudo cancelar la asistencia.',
+    );
+  }
+
   Future<Map<String, dynamic>> createEvent(CreateEventRequest event) async {
     final request = await _httpClient.postUrl(_baseUri.resolve('/eventos'));
     request.headers.contentType = ContentType.json;
@@ -64,6 +103,32 @@ class EventApiClient {
           : null;
       throw EventApiException(
         message ?? 'No se pudo crear el evento.',
+        statusCode: response.statusCode,
+      );
+    }
+
+    if (decoded is! Map<String, dynamic>) {
+      throw const EventApiException(
+        'La API devolvio una respuesta inesperada.',
+      );
+    }
+
+    return decoded;
+  }
+
+  Future<Map<String, dynamic>> _decodeJsonMapResponse(
+    HttpClientResponse response, {
+    required String fallbackErrorMessage,
+  }) async {
+    final responseBody = await response.transform(utf8.decoder).join();
+    final decoded = responseBody.isEmpty ? null : jsonDecode(responseBody);
+
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      final message = decoded is Map<String, dynamic>
+          ? decoded['error']?.toString()
+          : null;
+      throw EventApiException(
+        message ?? fallbackErrorMessage,
         statusCode: response.statusCode,
       );
     }
@@ -104,6 +169,7 @@ class EventSummary {
     required this.eventTypeName,
     required this.status,
     required this.chatEnabled,
+    required this.attendanceStatus,
   });
 
   factory EventSummary.fromJson(Map<String, dynamic> json) {
@@ -132,6 +198,7 @@ class EventSummary {
       eventTypeName: _cleanString(json['tipo_evento_nombre']),
       status: json['estado']?.toString() ?? 'PROGRAMADO',
       chatEnabled: _toBool(json['chat_habilitado']) ?? false,
+      attendanceStatus: _cleanString(json['estado_asistencia']),
     );
   }
 
@@ -159,10 +226,12 @@ class EventSummary {
   final String? eventTypeName;
   final String status;
   final bool chatEnabled;
+  final String? attendanceStatus;
 
   bool get hasLocation => latitude != null && longitude != null;
   bool get isPublic => visibility == 'PUBLICA';
   bool get isActive => status == 'PROGRAMADO' || status == 'EN_CURSO';
+  bool get hasConfirmedAttendance => attendanceStatus == 'CONFIRMADA';
   bool get belongsToGroup => groupId != null;
   bool get hasCompleteRequiredDetails =>
       title.trim().isNotEmpty &&
@@ -212,6 +281,36 @@ class EventSummary {
     }
 
     return '${lat.toStringAsFixed(5)}, ${lng.toStringAsFixed(5)}';
+  }
+
+  EventSummary copyWith({String? attendanceStatus}) {
+    return EventSummary(
+      id: id,
+      title: title,
+      description: description,
+      start: start,
+      durationMinutes: durationMinutes,
+      end: end,
+      latitude: latitude,
+      longitude: longitude,
+      visibility: visibility,
+      organizerId: organizerId,
+      organizerName: organizerName,
+      organizerEmail: organizerEmail,
+      organizerCareer: organizerCareer,
+      organizerInfo: organizerInfo,
+      groupId: groupId,
+      groupName: groupName,
+      groupDescription: groupDescription,
+      groupCategory: groupCategory,
+      groupIsOfficial: groupIsOfficial,
+      groupVerificationStatus: groupVerificationStatus,
+      eventTypeId: eventTypeId,
+      eventTypeName: eventTypeName,
+      status: status,
+      chatEnabled: chatEnabled,
+      attendanceStatus: attendanceStatus ?? this.attendanceStatus,
+    );
   }
 
   bool isVisibleByDefault(DateTime now) {
