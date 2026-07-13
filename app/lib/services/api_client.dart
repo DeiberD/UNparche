@@ -41,6 +41,23 @@ class ApiClient {
   // ==================== AUTH ENDPOINTS ====================
   // Note: Auth endpoints will need to be implemented in the backend
 
+  /// Login/Register with Google ID token
+  Future<User> loginWithGoogle({required String idToken}) async {
+    try {
+      final response = await http.post(
+        Uri.parse('$_baseUrl/auth/google'),
+        headers: _getHeaders(),
+        body: json.encode({'id_token': idToken}),
+      );
+
+      final data = _handleResponse(response);
+      return User.fromJson(data['usuario'] as Map<String, dynamic>);
+    } catch (e) {
+      if (e is ApiException) rethrow;
+      throw ApiException(message: 'Error al iniciar sesión con Google: $e');
+    }
+  }
+
   /// Login with email and password
   /// TODO: Implement in backend
   Future<User> login({

@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 class EventApiClient {
   EventApiClient({String? baseUrl, HttpClient? httpClient})
@@ -8,6 +9,10 @@ class EventApiClient {
 
   static const _configuredBaseUrl = String.fromEnvironment('API_BASE_URL');
   static String get defaultBaseUrl {
+    final envUrl = dotenv.env['API_BASE_URL'];
+    if (envUrl != null && envUrl.isNotEmpty) {
+      return envUrl;
+    }
     if (_configuredBaseUrl.isNotEmpty) {
       return _configuredBaseUrl;
     }

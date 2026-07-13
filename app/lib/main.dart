@@ -8,7 +8,6 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'auth_service.dart';
 import 'create_event_screen.dart';
 import 'event_api_client.dart';
-import 'login_screen.dart';
 import 'event_cluster_data.dart';
 import 'profile_screen.dart';
 import 'view_events_screen.dart';
@@ -18,7 +17,6 @@ import 'view_groups_screen.dart';
 String get _mapboxAccessToken => 
     dotenv.env['ACCESS_TOKEN'] ?? const String.fromEnvironment('ACCESS_TOKEN');
 
-const _demoUserId = 1;
 
 enum _HomeTab { map, events, groups }
 
@@ -134,13 +132,18 @@ class _CampusMapScreenState extends State<CampusMapScreen> {
   @override
   void initState() {
     super.initState();
-    _loadVisibleEvents();
+    // Use addPostFrameCallback so context.read<AuthService>() works correctly
+    // after the widget is fully mounted in the Provider tree.
+    WidgetsBinding.instance.addPostFrameCallback((_) => _loadVisibleEvents());
   }
 
   Future<void> _loadVisibleEvents() async {
-    if (_isLoadingEvents) {
+    if (_isLoadingEvents || !mounted) {
       return;
     }
+
+    // Read auth state before any await to avoid stale context issues.
+    final viewerUserId = context.read<AuthService>().currentUser?.id;
 
     setState(() {
       _isLoadingEvents = true;
@@ -148,7 +151,7 @@ class _CampusMapScreenState extends State<CampusMapScreen> {
     });
 
     try {
-      final events = await _eventApiClient.fetchEvents(viewerUserId: _demoUserId);
+      final events = await _eventApiClient.fetchEvents(viewerUserId: viewerUserId);
       final sortedEvents = [...events]
         ..sort((a, b) {
           final aStart = a.start;
@@ -190,6 +193,14 @@ class _CampusMapScreenState extends State<CampusMapScreen> {
   }
 
   Future<void> _openCreateEvent(BuildContext context) async {
+    final authService = context.read<AuthService>();
+    if (!authService.isAuthenticated) {
+      Navigator.of(context).push(
+        MaterialPageRoute(builder: (_) => const ProfileScreen()),
+      );
+      return;
+    }
+
     final messenger = ScaffoldMessenger.of(context);
     final event = await Navigator.of(context).push<CreatedEventDraft>(
       MaterialPageRoute(builder: (_) => const CreateEventScreen()),
@@ -209,11 +220,14 @@ class _CampusMapScreenState extends State<CampusMapScreen> {
       latitude: event.latitude,
       longitude: event.longitude,
       visibility: event.apiVisibility,
-      organizerId: 1,
-      organizerName: 'Usuario comunitario',
-      organizerEmail: null,
-      organizerCareer: null,
-      organizerInfo: null,
+      organizerId: authService.currentUser!.id,
+      organizerName: [
+        authService.currentUser!.name,
+        authService.currentUser!.lastName,
+      ].where((s) => s.isNotEmpty).join(' '),
+      organizerEmail: authService.currentUser!.email,
+      organizerCareer: authService.currentUser!.career,
+      organizerInfo: authService.currentUser!.personalInfo,
       groupId: null,
       groupName: null,
       groupDescription: null,
@@ -383,12 +397,13 @@ class _CampusMapScreenState extends State<CampusMapScreen> {
   }
 
   Future<void> _openEventDetails(EventSummary event) async {
+    final authService = context.read<AuthService>();
     final shouldOpenLocation = await Navigator.of(context).push<bool>(
       MaterialPageRoute(
         builder: (_) => EventDetailScreen(
           event: event,
           eventApiClient: _eventApiClient,
-          currentUserId: _demoUserId,
+          currentUserId: authService.currentUser?.id,
           onAttendanceChanged: _replaceEvent,
         ),
       ),
@@ -586,7 +601,7 @@ class _UNALMapState extends State<UNALMap> {
     mapboxMap.addInteraction(
       TapInteraction(
         FeaturesetDescriptor(layerId: unclusteredEventsLayerId),
-        (feature, _) => _handleEventTap(feature.properties),
+        (feature, _) => _handleEventTap(feature),
       ),
       interactionID: _eventTapInteractionId,
     );
@@ -647,79 +662,95 @@ class _UNALMapState extends State<UNALMap> {
       return;
     }
 
-    await mapboxMap.style.addSource(
-      GeoJsonSource(
-        id: eventClusterSourceId,
-        data: jsonEncode(buildEventClusterFeatureCollection(widget.events)),
-        cluster: true,
-        clusterRadius: eventClusterRadius,
-        clusterMaxZoom: eventClusterMaxZoom,
-        clusterMinPoints: 2,
-      ),
-    );
-    await mapboxMap.style.addLayer(
-      CircleLayer(
-        id: eventClustersLayerId,
-        sourceId: eventClusterSourceId,
-        filter: const ['has', 'point_count'],
-        circleColor: CampusMapScreen._ink.toARGB32(),
-        circleRadiusExpression: const [
-          'step',
-          ['get', 'point_count'],
-          18.0,
-          10,
-          23.0,
-          25,
-          28.0,
-        ],
-        circleStrokeColor: Colors.white.toARGB32(),
-        circleStrokeWidth: 3,
-      ),
-    );
-    await mapboxMap.style.addLayer(
-      SymbolLayer(
-        id: eventClusterCountLayerId,
-        sourceId: eventClusterSourceId,
-        filter: const ['has', 'point_count'],
-        textFieldExpression: const ['get', 'point_count_abbreviated'],
-        textSize: 13,
-        textColor: Colors.white.toARGB32(),
-        textAllowOverlap: true,
-      ),
-    );
-    await mapboxMap.style.addLayer(
-      CircleLayer(
-        id: unclusteredEventsLayerId,
-        sourceId: eventClusterSourceId,
-        filter: const [
-          '!',
-          ['has', 'point_count'],
-        ],
-        circleColorExpression: const [
-          'match',
-          ['get', 'event_type_id'],
-          1,
-          '#4267B2',
-          2,
-          '#8B4C9D',
-          3,
-          '#2E7D32',
-          4,
-          '#C2410C',
-          '#263020',
-        ],
-        circleRadius: 8,
-        circleStrokeColor: Colors.white.toARGB32(),
-        circleStrokeWidth: 3,
-      ),
-    );
+    final sourceExists = await mapboxMap.style.styleSourceExists(eventClusterSourceId);
+    if (!sourceExists) {
+      await mapboxMap.style.addSource(
+        GeoJsonSource(
+          id: eventClusterSourceId,
+          data: jsonEncode(buildEventClusterFeatureCollection(widget.events)),
+          cluster: true,
+          clusterRadius: eventClusterRadius,
+          clusterMaxZoom: eventClusterMaxZoom,
+          clusterMinPoints: 2,
+        ),
+      );
+    }
+
+    final clustersExist = await mapboxMap.style.styleLayerExists(eventClustersLayerId);
+    if (!clustersExist) {
+      await mapboxMap.style.addLayer(
+        CircleLayer(
+          id: eventClustersLayerId,
+          sourceId: eventClusterSourceId,
+          filter: const ['has', 'point_count'],
+          circleColor: CampusMapScreen._ink.toARGB32(),
+          circleRadiusExpression: const [
+            'step',
+            ['get', 'point_count'],
+            18.0,
+            10,
+            23.0,
+            25,
+            28.0,
+          ],
+          circleStrokeColor: Colors.white.toARGB32(),
+          circleStrokeWidth: 3,
+        ),
+      );
+    }
+
+    final countExist = await mapboxMap.style.styleLayerExists(eventClusterCountLayerId);
+    if (!countExist) {
+      await mapboxMap.style.addLayer(
+        SymbolLayer(
+          id: eventClusterCountLayerId,
+          sourceId: eventClusterSourceId,
+          filter: const ['has', 'point_count'],
+          textFieldExpression: const ['get', 'point_count_abbreviated'],
+          textSize: 13,
+          textColor: Colors.white.toARGB32(),
+          textAllowOverlap: true,
+        ),
+      );
+    }
+
+    final unclusteredExist = await mapboxMap.style.styleLayerExists(unclusteredEventsLayerId);
+    if (!unclusteredExist) {
+      await mapboxMap.style.addLayer(
+        CircleLayer(
+          id: unclusteredEventsLayerId,
+          sourceId: eventClusterSourceId,
+          filter: const [
+            '!',
+            ['has', 'point_count'],
+          ],
+          circleColorExpression: const [
+            'match',
+            ['get', 'event_type_id'],
+            1,
+            '#4267B2',
+            2,
+            '#8B4C9D',
+            3,
+            '#2E7D32',
+            4,
+            '#C2410C',
+            '#263020',
+          ],
+          circleRadius: 8,
+          circleStrokeColor: Colors.white.toARGB32(),
+          circleStrokeWidth: 3,
+        ),
+      );
+    }
 
     _eventLayersReady = true;
     await _syncEventMarkers();
   }
 
-  void _handleEventTap(Map<String, Object?> properties) {
-    final event = _eventsByFeatureKey[properties['event_key']?.toString()];
+  void _handleEventTap(FeaturesetFeature feature) {
+    final eventKey = feature.properties['event_key']?.toString() ?? feature.id?.id;
+    final event = _eventsByFeatureKey[eventKey];
     if (event != null) {
       widget.onEventTap(event);
     }
@@ -741,10 +772,13 @@ class _UNALMapState extends State<UNALMap> {
       'properties': feature.properties,
     };
 
+    final pointCountVal = feature.properties['point_count'];
+    final pointCount = pointCountVal is num ? pointCountVal.toInt() : null;
+
     final leaves = await mapboxMap.getGeoJsonClusterLeaves(
       eventClusterSourceId,
       clusterFeature,
-      feature.properties['point_count'] as int?,
+      pointCount,
       0,
     );
     final events = <EventSummary>[];
@@ -753,7 +787,7 @@ class _UNALMapState extends State<UNALMap> {
       if (properties is! Map) {
         continue;
       }
-      final event = _eventsByFeatureKey[properties['event_key']?.toString()];
+      final event = _eventsByFeatureKey[properties['event_key']?.toString() ?? leaf?['id']?.toString()];
       if (event != null) {
         events.add(event);
       }
@@ -1014,18 +1048,10 @@ class MapHeader extends StatelessWidget {
     );
   }
 
-  /// Navigate to login screen
-  void _openLogin(BuildContext context) {
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => const LoginScreen(),
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     final authService = context.watch<AuthService>();
+    final user = authService.currentUser;
     final isAuthenticated = authService.isAuthenticated;
 
     return Container(
@@ -1044,51 +1070,54 @@ class MapHeader extends StatelessWidget {
       child: Row(
         children: [
           const SizedBox(width: 12),
-          // Show login button or user avatar based on authentication state
-          if (isAuthenticated)
-            // User avatar (tap to open profile)
-            InkWell(
-              onTap: () => _openProfile(context),
-              borderRadius: BorderRadius.circular(17),
-              child: CircleAvatar(
-                radius: 17,
-                backgroundColor: CampusMapScreen._accent,
-                backgroundImage: authService.currentUser?.photoUrl != null
-                    ? NetworkImage(authService.currentUser!.photoUrl!)
-                    : null,
-                child: authService.currentUser?.photoUrl == null
-                    ? const Icon(Icons.person, color: CampusMapScreen._ink, size: 20)
-                    : null,
-              ),
-            )
-          else
-            // Login button
-            InkWell(
-              onTap: () => _openLogin(context),
-              borderRadius: BorderRadius.circular(17),
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                decoration: BoxDecoration(
-                  color: CampusMapScreen._ink,
-                  borderRadius: BorderRadius.circular(17),
-                ),
-                child: const Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(Icons.login, color: Colors.white, size: 16),
-                    SizedBox(width: 4),
-                    Text(
-                      'Iniciar sesión',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w800,
+          // Profile / Login button
+          InkWell(
+            onTap: () => _openProfile(context),
+            borderRadius: BorderRadius.circular(24),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (isAuthenticated) ...[
+                    CircleAvatar(
+                      radius: 17,
+                      backgroundColor: CampusMapScreen._accent,
+                      backgroundImage: user?.photoUrl != null
+                          ? NetworkImage(user!.photoUrl!)
+                          : null,
+                      child: user?.photoUrl == null
+                          ? const Icon(
+                              Icons.person,
+                              color: CampusMapScreen._ink,
+                              size: 20,
+                            )
+                          : null,
+                    ),
+                  ] else ...[
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 6,
+                      ),
+                      decoration: BoxDecoration(
+                        color: CampusMapScreen._ink,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: const Text(
+                        'Iniciar sesión',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w800,
+                        ),
                       ),
                     ),
                   ],
-                ),
+                ],
               ),
             ),
+          ),
           const Expanded(
             child: Center(
               child: Text(

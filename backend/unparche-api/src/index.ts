@@ -774,6 +774,190 @@ export default {
 		}
 
 
+		// POST /auth/google
+		if (request.method === "POST" && url.pathname === "/auth/google") {
+			let body: { id_token?: string };
+			try {
+				body = await request.json();
+			} catch {
+				return json({ ok: false, error: "El body debe ser JSON valido." }, { status: 400 });
+			}
+
+			const idToken = body.id_token;
+			if (!idToken) {
+				return json({ ok: false, error: "id_token es requerido." }, { status: 400 });
+			}
+
+			// Verify token with Google API
+			const res = await fetch(`https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(idToken)}`);
+			if (!res.ok) {
+				return json({ ok: false, error: "Token de Google no valido o expirado." }, { status: 401 });
+			}
+
+			const googleUser = await res.json() as {
+				sub?: string;
+				email?: string;
+				name?: string;
+				given_name?: string;
+				family_name?: string;
+				picture?: string;
+			};
+
+			if (!googleUser.sub || !googleUser.email) {
+				return json({ ok: false, error: "La respuesta de Google no contiene la informacion necesaria." }, { status: 401 });
+			}
+
+			if (!googleUser.email.endsWith("@unal.edu.co")) {
+				return json({ ok: false, error: "Solo se permiten correos institucionales de la Universidad Nacional." }, { status: 403 });
+			}
+
+			const googleId = googleUser.sub;
+			const email = googleUser.email;
+			const name = googleUser.given_name || googleUser.name || "Usuario";
+			const lastName = googleUser.family_name || "";
+			const picture = googleUser.picture || null;
+
+			// Check if user already exists by googleId
+			let user = await env.unparche_db
+				.prepare(
+					`SELECT
+						id_usuario,
+						correo_institucional,
+						nombre,
+						apellido,
+						carrera,
+						informacion_personal,
+						rol,
+						foto_perfil AS foto_url,
+						fecha_creacion,
+						google_id
+					FROM usuario
+					WHERE google_id = ?`
+				)
+				.bind(googleId)
+				.first<{
+					id_usuario: number;
+					correo_institucional: string;
+					nombre: string;
+					apellido: string;
+					carrera: string;
+					informacion_personal: string | null;
+					rol: string;
+					foto_url: string | null;
+					fecha_creacion: string;
+					google_id: string;
+				}>();
+
+			if (!user) {
+				// Check by email (local account linking)
+				user = await env.unparche_db
+					.prepare(
+						`SELECT
+							id_usuario,
+							correo_institucional,
+							nombre,
+							apellido,
+							carrera,
+							informacion_personal,
+							rol,
+							foto_perfil AS foto_url,
+							fecha_creacion,
+							google_id
+						FROM usuario
+						WHERE correo_institucional = ?`
+					)
+					.bind(email)
+					.first<any>();
+
+				if (user) {
+					// Link Google Auth to existing local account
+					await env.unparche_db
+						.prepare(
+							`UPDATE usuario
+							 SET google_id = ?,
+							     proveedor_auth = 'GOOGLE',
+							     correo_verificado = 1,
+							     foto_perfil = COALESCE(foto_perfil, ?)
+							 WHERE id_usuario = ?`
+						)
+						.bind(googleId, picture, user.id_usuario)
+						.run();
+
+					// Refresh user data
+					user = await env.unparche_db
+						.prepare(
+							`SELECT
+								id_usuario,
+								correo_institucional,
+								nombre,
+								apellido,
+								carrera,
+								informacion_personal,
+								rol,
+								foto_perfil AS foto_url,
+								fecha_creacion
+							FROM usuario
+							WHERE id_usuario = ?`
+						)
+						.bind(user.id_usuario)
+						.first<any>();
+				} else {
+					// Create new Google user
+					const result = await env.unparche_db
+						.prepare(
+							`INSERT INTO usuario (
+								correo_institucional,
+								nombre,
+								apellido,
+								contrasena_hash,
+								foto_perfil,
+								carrera,
+								informacion_personal,
+								rol,
+								google_id,
+								proveedor_auth,
+								correo_verificado
+							) VALUES (?, ?, ?, 'OAUTH:GOOGLE', ?, 'Estudiante', '', 'COMUNITARIO', ?, 'GOOGLE', 1)`
+						)
+						.bind(email, name, lastName, picture, googleId)
+						.run();
+
+					const newUserId = result.meta.last_row_id;
+					user = await env.unparche_db
+						.prepare(
+							`SELECT
+								id_usuario,
+								correo_institucional,
+								nombre,
+								apellido,
+								carrera,
+								informacion_personal,
+								rol,
+								foto_perfil AS foto_url,
+								fecha_creacion
+							FROM usuario
+							WHERE id_usuario = ?`
+						)
+						.bind(newUserId)
+						.first<any>();
+				}
+			} else {
+				// Existing google user, update photo if it was empty
+				if (picture && !user.foto_url) {
+					await env.unparche_db
+						.prepare(`UPDATE usuario SET foto_perfil = ? WHERE id_usuario = ?`)
+						.bind(picture, user.id_usuario)
+						.run();
+					user = {
+						...user,
+						foto_url: picture,
+					};
+				}
+			}
+
+			return json({ ok: true, usuario: user });
+		}
+
 		// GET usuarios/id
 		const usuarioMatch = url.pathname.match(/^\/usuarios\/(\d+)$/);
 
@@ -790,6 +974,7 @@ export default {
 						carrera,
 						informacion_personal,
 						rol,
+						foto_perfil AS foto_url,
 						fecha_creacion
 					FROM usuario
 					WHERE id_usuario = ?`

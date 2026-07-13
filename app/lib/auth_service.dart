@@ -1,4 +1,6 @@
 import 'package:flutter/foundation.dart';
+import 'package:google_sign_in/google_sign_in.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 import 'models/user.dart';
 import 'services/api_client.dart';
@@ -73,28 +75,52 @@ class AuthService extends ChangeNotifier {
     notifyListeners();
 
     try {
-      // TODO: Implement Google Sign-In
-      await Future.delayed(const Duration(seconds: 2));
-
-      // Mock user
-      _currentUser = const User(
-        id: 1,
-        email: 'deiber.gongora@unal.edu.co',
-        name: 'Deiber',
-        lastName: 'Gongora',
-        career: 'Ingeniería de Sistemas',
-        personalInfo: 'Systems Engineering student 🎓 | French learner 🇫🇷\nAlways looking for optimization problems.',
-        role: 'ESTUDIANTE',
+      final googleSignIn = GoogleSignIn(
+        clientId: defaultTargetPlatform == TargetPlatform.iOS
+            ? dotenv.env['GOOGLE_IOS_CLIENT_ID']?.trim()
+            : null,
+        serverClientId: dotenv.env['GOOGLE_WEB_CLIENT_ID']?.trim(),
+        scopes: ['email', 'profile'],
       );
+
+      final googleUser = await googleSignIn.signIn();
+      if (googleUser == null) {
+        _isLoading = false;
+        notifyListeners();
+        return AuthResult.error('Inicio de sesión cancelado por el usuario.');
+      }
+
+      final googleAuth = await googleUser.authentication;
+      final idToken = googleAuth.idToken;
+
+      // Debug: print what we got from Google authentication
+      debugPrint('[GoogleSignIn] serverClientId = ${dotenv.env['GOOGLE_WEB_CLIENT_ID']?.trim()}');
+      debugPrint('[GoogleSignIn] email = ${googleUser.email}');
+      debugPrint('[GoogleSignIn] idToken = ${idToken != null ? 'PRESENT (${idToken.length} chars)' : 'NULL'}');
+      debugPrint('[GoogleSignIn] accessToken = ${googleAuth.accessToken != null ? 'PRESENT' : 'NULL'}');
+
+      if (idToken == null) {
+        _isLoading = false;
+        notifyListeners();
+        return AuthResult.error('No se pudo obtener el token de Google. Verifica que la huella SHA-1 del app esté registrada en Google Cloud Console y que el GOOGLE_WEB_CLIENT_ID sea un cliente de tipo "Web Application".');
+      }
+
+      // Call API
+      final user = await _apiClient.loginWithGoogle(idToken: idToken);
+      _currentUser = user;
 
       _isLoading = false;
       notifyListeners();
 
       return AuthResult.success();
+    } on ApiException catch (e) {
+      _isLoading = false;
+      notifyListeners();
+      return AuthResult.error(e.message);
     } catch (e) {
       _isLoading = false;
       notifyListeners();
-      return AuthResult.error('Error al iniciar sesión con Google.');
+      return AuthResult.error('Error al iniciar sesión con Google: $e');
     }
   }
 
@@ -177,7 +203,14 @@ class AuthService extends ChangeNotifier {
   /// Sign out the current user
   Future<void> signOut() async {
     _currentUser = null;
-    // TODO: Clear secure storage
+    try {
+      final googleSignIn = GoogleSignIn();
+      if (await googleSignIn.isSignedIn()) {
+        await googleSignIn.signOut();
+      }
+    } catch (e) {
+      debugPrint('Error signing out of Google: $e');
+    }
     notifyListeners();
   }
 
@@ -199,6 +232,24 @@ class AuthService extends ChangeNotifier {
       // Silently fail - keep existing user data
       debugPrint('Error refreshing user: $e');
     }
+  }
+
+  /// Update local user data (used by profile edit screen)
+  /// In production this would call the backend PATCH endpoint.
+  void updateUser({
+    String? name,
+    String? lastName,
+    String? career,
+    String? personalInfo,
+  }) {
+    if (_currentUser == null) return;
+    _currentUser = _currentUser!.copyWith(
+      name: name,
+      lastName: lastName,
+      career: career,
+      personalInfo: personalInfo,
+    );
+    notifyListeners();
   }
 }
 
