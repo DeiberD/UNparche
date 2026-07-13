@@ -1590,7 +1590,7 @@ export default {
 		}
 
 
-		// GET eventos
+		// GET ids de todos los eventos
 		if (request.method === "GET" && url.pathname === "/eventos/ids-actuales") {
 			const eventosActuales = await env.unparche_db
 				.prepare(
