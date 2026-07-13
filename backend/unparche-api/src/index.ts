@@ -1606,49 +1606,6 @@ export default {
 
 			return json(eventosActuales.results.map((evento) => evento.id_evento));
 		}
-
-		// GET eventos
-		if (request.method === "GET" && url.pathname === "/eventos") {
-			const eventos = await env.unparche_db
-				.prepare(
-					`SELECT
-						e.id_evento,
-						e.titulo,
-						e.descripcion,
-						e.fecha_inicio,
-						e.duracion_minutos,
-						e.fecha_fin,
-						e.fecha_publicacion,
-						e.latitud,
-						e.longitud,
-						e.visibilidad,
-						e.chat_habilitado,
-						e.estado,
-						e.id_organizador,
-						u.nombre || ' ' || u.apellido AS organizador_nombre,
-						u.correo_institucional AS organizador_correo,
-						u.carrera AS organizador_carrera,
-						u.informacion_personal AS organizador_informacion,
-						e.id_grupo,
-						g.nombre AS grupo_nombre,
-						g.descripcion AS grupo_descripcion,
-						g.categoria AS grupo_categoria,
-						g.es_oficial AS grupo_es_oficial,
-						g.estado_verificacion AS grupo_estado_verificacion,
-						e.id_tipo_evento,
-						t.nombre AS tipo_evento_nombre,
-						t.icono_svg AS tipo_evento_icono
-					FROM evento e
-					JOIN usuario u ON u.id_usuario = e.id_organizador
-					JOIN tipo_evento t ON t.id_tipo_evento = e.id_tipo_evento
-					LEFT JOIN grupo g ON g.id_grupo = e.id_grupo
-					WHERE e.fecha_eliminacion IS NULL
-					ORDER BY e.fecha_inicio DESC`
-				)
-				.all();
-
-			return json({ ok: true, eventos: eventos.results });
-		}
 		
 
 		// POST eventos
