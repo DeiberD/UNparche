@@ -14,6 +14,7 @@ import 'services/api_client.dart';
 /// - Profile photo with edit option
 /// - User name and biography
 /// - Edit profile button
+/// - Logout button
 /// - User's groups list (from API)
 /// - Upcoming events list (from API)
 class ProfileScreen extends StatefulWidget {
@@ -39,11 +40,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
   @override
   void initState() {
     super.initState();
-    _loadUserData();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _loadUserData());
   }
 
   /// Load user's events and groups from API
   Future<void> _loadUserData() async {
+    if (!mounted) return;
     final authService = context.read<AuthService>();
     if (!authService.isAuthenticated) return;
 
@@ -59,7 +61,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       final eventsData = await _apiClient.getUserEvents(userId);
       final organizedEvents = eventsData['organized'] ?? <Event>[];
       final attendingEvents = eventsData['attending'] ?? <Event>[];
-      
+
       final allEvents = [...organizedEvents, ...attendingEvents];
 
       // Filter upcoming events (not yet finished)
@@ -73,26 +75,95 @@ class _ProfileScreenState extends State<ProfileScreen> {
         ..sort((a, b) => (a.startDate ?? DateTime(9999))
             .compareTo(b.startDate ?? DateTime(9999)));
 
-      // Load user groups (mock for now - needs backend endpoint)
       // TODO: Implement /usuarios/:id/grupos endpoint in backend
       final groups = <Group>[];
 
+      if (!mounted) return;
       setState(() {
         _userEvents = upcomingEvents.take(5).toList();
         _userGroups = groups;
         _isLoadingData = false;
       });
     } on ApiException catch (e) {
+      if (!mounted) return;
       setState(() {
         _errorMessage = e.message;
         _isLoadingData = false;
       });
     } catch (e) {
+      if (!mounted) return;
       setState(() {
         _errorMessage = 'Error al cargar datos del perfil';
         _isLoadingData = false;
       });
     }
+  }
+
+  Future<void> _confirmSignOut() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: ProfileScreen._surface,
+        title: const Text(
+          'Cerrar sesión',
+          style: TextStyle(
+            color: ProfileScreen._ink,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+        content: Text(
+          '¿Estás seguro de que deseas cerrar sesión?',
+          style: TextStyle(
+            color: ProfileScreen._ink.withAlpha(180),
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: Text(
+              'Cancelar',
+              style: TextStyle(
+                color: ProfileScreen._ink.withAlpha(160),
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            style: FilledButton.styleFrom(
+              backgroundColor: ProfileScreen._ink,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+            child: const Text(
+              'Cerrar sesión',
+              style: TextStyle(fontWeight: FontWeight.w800),
+            ),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true && mounted) {
+      await context.read<AuthService>().signOut();
+      // Clear cached data
+      setState(() {
+        _userEvents = null;
+        _userGroups = null;
+        _errorMessage = null;
+      });
+    }
+  }
+
+  void _openEditProfile() {
+    Navigator.of(context)
+        .push(
+          MaterialPageRoute(builder: (_) => const _EditProfileScreen()),
+        )
+        .then((_) => _loadUserData());
   }
 
   @override
@@ -114,40 +185,37 @@ class _ProfileScreenState extends State<ProfileScreen> {
           'Perfil',
           style: TextStyle(fontWeight: FontWeight.w800),
         ),
-        // TODO: Implement search functionality
-        // actions: [
-        //   IconButton(
-        //     icon: const Icon(Icons.search),
-        //     onPressed: () {},
-        //     tooltip: 'Buscar',
-        //   ),
-        // ],
+        actions: [
+          // Logout button in AppBar
+          IconButton(
+            icon: const Icon(Icons.logout_rounded),
+            tooltip: 'Cerrar sesión',
+            onPressed: _confirmSignOut,
+          ),
+          const SizedBox(width: 4),
+        ],
       ),
       body: SafeArea(
         child: RefreshIndicator(
           onRefresh: _loadUserData,
+          color: ProfileScreen._ink,
           child: ListView(
-            padding: const EdgeInsets.fromLTRB(18, 12, 18, 24),
+            padding: const EdgeInsets.fromLTRB(18, 12, 18, 32),
             children: [
               // Profile section
-              const _ProfileHeader(),
-              const SizedBox(height: 24),
+              _ProfileHeader(),
+              const SizedBox(height: 20),
 
-              // Edit profile button
-              _EditProfileButton(
-                onPressed: () {
-                  // TODO: Navigate to profile edit screen
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Edición de perfil próximamente'),
-                    ),
-                  );
-                },
-              ),
+              // Action buttons row: Edit profile
+              _EditProfileButton(onPressed: _openEditProfile),
+              const SizedBox(height: 12),
+
+              // Logout button
+              _SignOutButton(onPressed: _confirmSignOut),
               const SizedBox(height: 32),
 
               // Groups section
-              const _SectionTitle(title: 'My Groups'),
+              const _SectionTitle(title: 'Mis grupos'),
               const SizedBox(height: 12),
               _isLoadingData
                   ? const Center(
@@ -160,7 +228,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
               const SizedBox(height: 32),
 
               // Upcoming events section
-              const _SectionTitle(title: 'Upcoming Events'),
+              const _SectionTitle(title: 'Próximos eventos'),
               const SizedBox(height: 12),
               _isLoadingData
                   ? const Center(
@@ -179,6 +247,502 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 }
+
+// ---------------------------------------------------------------------------
+// Edit Profile Screen
+// ---------------------------------------------------------------------------
+
+class _EditProfileScreen extends StatefulWidget {
+  const _EditProfileScreen();
+
+  @override
+  State<_EditProfileScreen> createState() => _EditProfileScreenState();
+}
+
+class _EditProfileScreenState extends State<_EditProfileScreen> {
+  final _formKey = GlobalKey<FormState>();
+  late TextEditingController _nameController;
+  late TextEditingController _lastNameController;
+  late TextEditingController _careerController;
+  late TextEditingController _bioController;
+
+  bool _isSaving = false;
+  bool _hasChanges = false;
+
+  @override
+  void initState() {
+    super.initState();
+    final user = context.read<AuthService>().currentUser;
+    _nameController = TextEditingController(text: user?.name ?? '');
+    _lastNameController = TextEditingController(text: user?.lastName ?? '');
+    _careerController = TextEditingController(text: user?.career ?? '');
+    _bioController = TextEditingController(text: user?.personalInfo ?? '');
+
+    // Listen for changes
+    for (final ctrl in [
+      _nameController,
+      _lastNameController,
+      _careerController,
+      _bioController,
+    ]) {
+      ctrl.addListener(_onFieldChanged);
+    }
+  }
+
+  void _onFieldChanged() {
+    if (!_hasChanges && mounted) setState(() => _hasChanges = true);
+  }
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    _lastNameController.dispose();
+    _careerController.dispose();
+    _bioController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _save() async {
+    if (!(_formKey.currentState?.validate() ?? false) || _isSaving) return;
+
+    setState(() => _isSaving = true);
+
+    try {
+      // Simulate brief network delay (remove when backend endpoint is ready)
+      await Future.delayed(const Duration(milliseconds: 600));
+
+      if (!mounted) return;
+
+      // Update local user through AuthService
+      context.read<AuthService>().updateUser(
+            name: _nameController.text.trim(),
+            lastName: _lastNameController.text.trim(),
+            career: _careerController.text.trim(),
+            personalInfo: _bioController.text.trim(),
+          );
+
+      setState(() {
+        _isSaving = false;
+        _hasChanges = false;
+      });
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Perfil actualizado correctamente'),
+            backgroundColor: Color(0xFF263020),
+          ),
+        );
+        Navigator.of(context).pop();
+      }
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _isSaving = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error al guardar: $e')),
+      );
+    }
+  }
+
+  Future<bool> _onWillPop() async {
+    if (!_hasChanges) return true;
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: ProfileScreen._surface,
+        title: const Text(
+          'Cambios sin guardar',
+          style: TextStyle(
+            color: ProfileScreen._ink,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+        content: Text(
+          'Tienes cambios sin guardar. ¿Deseas salir de todos modos?',
+          style: TextStyle(
+            color: ProfileScreen._ink.withAlpha(180),
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: Text(
+              'Quedarme',
+              style: TextStyle(
+                color: ProfileScreen._ink.withAlpha(160),
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            style: FilledButton.styleFrom(
+              backgroundColor: ProfileScreen._ink,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+            child: const Text(
+              'Salir',
+              style: TextStyle(fontWeight: FontWeight.w800),
+            ),
+          ),
+        ],
+      ),
+    );
+    return result ?? false;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return PopScope(
+      canPop: !_hasChanges,
+      onPopInvokedWithResult: (didPop, _) async {
+        if (!didPop) {
+          final shouldPop = await _onWillPop();
+          if (shouldPop && context.mounted) {
+            Navigator.of(context).pop();
+          }
+        }
+      },
+      child: Scaffold(
+        backgroundColor: ProfileScreen._background,
+        appBar: AppBar(
+          backgroundColor: ProfileScreen._background,
+          foregroundColor: ProfileScreen._ink,
+          title: const Text(
+            'Editar perfil',
+            style: TextStyle(fontWeight: FontWeight.w800),
+          ),
+          actions: [
+            if (_hasChanges)
+              Padding(
+                padding: const EdgeInsets.only(right: 12),
+                child: TextButton(
+                  onPressed: _isSaving ? null : _save,
+                  child: Text(
+                    'Guardar',
+                    style: TextStyle(
+                      color: ProfileScreen._ink,
+                      fontWeight: FontWeight.w800,
+                      fontSize: 15,
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        ),
+        body: SafeArea(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(18, 12, 18, 40),
+            child: Form(
+              key: _formKey,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Avatar section
+                  Center(
+                    child: Stack(
+                      children: [
+                        Container(
+                          width: 110,
+                          height: 110,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: ProfileScreen._surface,
+                            border: Border.all(
+                              color: ProfileScreen._ink.withAlpha(30),
+                              width: 2,
+                            ),
+                          ),
+                          child: const ClipOval(
+                            child: Icon(
+                              Icons.person,
+                              size: 56,
+                              color: ProfileScreen._ink,
+                            ),
+                          ),
+                        ),
+                        Positioned(
+                          right: 0,
+                          bottom: 0,
+                          child: Container(
+                            width: 34,
+                            height: 34,
+                            decoration: BoxDecoration(
+                              color: ProfileScreen._ink,
+                              shape: BoxShape.circle,
+                              border: Border.all(
+                                color: ProfileScreen._background,
+                                width: 3,
+                              ),
+                            ),
+                            child: const Icon(
+                              Icons.camera_alt,
+                              size: 16,
+                              color: Colors.white,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 32),
+
+                  // ── Personal information ──
+                  const _FormSectionLabel(label: 'Información personal'),
+                  const SizedBox(height: 12),
+
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _ProfileTextField(
+                          controller: _nameController,
+                          label: 'Nombre',
+                          icon: Icons.person_outline,
+                          validator: (v) => (v == null || v.trim().isEmpty)
+                              ? 'Campo requerido'
+                              : null,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: _ProfileTextField(
+                          controller: _lastNameController,
+                          label: 'Apellido',
+                          icon: Icons.person_outline,
+                          validator: (v) => (v == null || v.trim().isEmpty)
+                              ? 'Campo requerido'
+                              : null,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 14),
+
+                  _ProfileTextField(
+                    controller: _careerController,
+                    label: 'Carrera',
+                    icon: Icons.school_outlined,
+                    validator: (v) => (v == null || v.trim().isEmpty)
+                        ? 'Campo requerido'
+                        : null,
+                  ),
+                  const SizedBox(height: 14),
+
+                  // Email (read-only)
+                  _ReadOnlyField(
+                    label: 'Correo institucional',
+                    value: context.read<AuthService>().currentUser?.email ?? '',
+                    icon: Icons.email_outlined,
+                  ),
+                  const SizedBox(height: 28),
+
+                  // ── Bio ──
+                  const _FormSectionLabel(label: 'Sobre mí'),
+                  const SizedBox(height: 12),
+
+                  _ProfileTextField(
+                    controller: _bioController,
+                    label: 'Información personal',
+                    icon: Icons.info_outline,
+                    maxLines: 4,
+                    hintText:
+                        'Cuéntale a la comunidad un poco sobre ti...',
+                    validator: null,
+                  ),
+                  const SizedBox(height: 32),
+
+                  // Save button
+                  SizedBox(
+                    width: double.infinity,
+                    height: 54,
+                    child: FilledButton(
+                      onPressed: _isSaving ? null : _save,
+                      style: FilledButton.styleFrom(
+                        backgroundColor: ProfileScreen._ink,
+                        foregroundColor: Colors.white,
+                        disabledBackgroundColor:
+                            ProfileScreen._ink.withAlpha(80),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                      ),
+                      child: _isSaving
+                          ? const SizedBox(
+                              width: 22,
+                              height: 22,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2.5,
+                                color: Colors.white,
+                              ),
+                            )
+                          : const Text(
+                              'Guardar cambios',
+                              style: TextStyle(
+                                fontWeight: FontWeight.w800,
+                                fontSize: 15,
+                              ),
+                            ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Reusable form components
+// ---------------------------------------------------------------------------
+
+class _FormSectionLabel extends StatelessWidget {
+  const _FormSectionLabel({required this.label});
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Text(
+      label,
+      style: const TextStyle(
+        color: ProfileScreen._ink,
+        fontSize: 13,
+        fontWeight: FontWeight.w800,
+        letterSpacing: 0.8,
+      ),
+    );
+  }
+}
+
+class _ProfileTextField extends StatelessWidget {
+  const _ProfileTextField({
+    required this.controller,
+    required this.label,
+    required this.icon,
+    this.maxLines = 1,
+    this.hintText,
+    this.validator,
+  });
+
+  final TextEditingController controller;
+  final String label;
+  final IconData icon;
+  final int maxLines;
+  final String? hintText;
+  final String? Function(String?)? validator;
+
+  @override
+  Widget build(BuildContext context) {
+    return TextFormField(
+      controller: controller,
+      maxLines: maxLines,
+      validator: validator,
+      style: const TextStyle(
+        color: ProfileScreen._ink,
+        fontWeight: FontWeight.w600,
+        fontSize: 15,
+      ),
+      decoration: InputDecoration(
+        labelText: label,
+        hintText: hintText,
+        prefixIcon: Icon(icon, color: ProfileScreen._ink.withAlpha(160), size: 20),
+        labelStyle: TextStyle(
+          color: ProfileScreen._ink.withAlpha(160),
+          fontWeight: FontWeight.w700,
+        ),
+        hintStyle: TextStyle(
+          color: ProfileScreen._ink.withAlpha(100),
+          fontWeight: FontWeight.w500,
+        ),
+        filled: true,
+        fillColor: Colors.white.withAlpha(230),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: BorderSide(color: ProfileScreen._ink.withAlpha(30)),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: BorderSide(color: ProfileScreen._ink, width: 2),
+        ),
+        errorBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: const BorderSide(color: Color(0xFFB3261E)),
+        ),
+        focusedErrorBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: const BorderSide(color: Color(0xFFB3261E), width: 2),
+        ),
+        contentPadding:
+            const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+      ),
+    );
+  }
+}
+
+class _ReadOnlyField extends StatelessWidget {
+  const _ReadOnlyField({
+    required this.label,
+    required this.value,
+    required this.icon,
+  });
+
+  final String label;
+  final String value;
+  final IconData icon;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+      decoration: BoxDecoration(
+        color: ProfileScreen._surface.withAlpha(200),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: ProfileScreen._ink.withAlpha(20)),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, color: ProfileScreen._ink.withAlpha(120), size: 20),
+          const SizedBox(width: 12),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                label,
+                style: TextStyle(
+                  color: ProfileScreen._ink.withAlpha(140),
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 0.3,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                value,
+                style: TextStyle(
+                  color: ProfileScreen._ink.withAlpha(180),
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+          const Spacer(),
+          Icon(Icons.lock_outline, size: 14, color: ProfileScreen._ink.withAlpha(100)),
+        ],
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Profile screen components
+// ---------------------------------------------------------------------------
 
 /// Error message widget
 class _ErrorMessage extends StatelessWidget {
@@ -223,7 +787,8 @@ class _ErrorMessage extends StatelessWidget {
 
 /// Profile header widget with photo, name and biography
 class _ProfileHeader extends StatelessWidget {
-  const _ProfileHeader();
+  // ignore: prefer_const_constructors_in_immutables
+  _ProfileHeader();
 
   @override
   Widget build(BuildContext context) {
@@ -232,57 +797,44 @@ class _ProfileHeader extends StatelessWidget {
 
     return Column(
       children: [
-        // Profile photo with edit button
-        Stack(
-          children: [
-            Container(
-              width: 120,
-              height: 120,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: ProfileScreen._surface,
-                border: Border.all(
-                  color: ProfileScreen._ink.withAlpha(30),
-                  width: 2,
-                ),
-                boxShadow: [
-                  BoxShadow(
-                    color: ProfileScreen._ink.withAlpha(15),
-                    blurRadius: 16,
-                    offset: const Offset(0, 6),
-                  ),
-                ],
-              ),
-              child: const ClipOval(
-                child: Icon(
-                  Icons.person,
-                  size: 60,
-                  color: ProfileScreen._ink,
-                ),
-              ),
+        // Profile photo
+        Container(
+          width: 120,
+          height: 120,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: ProfileScreen._surface,
+            border: Border.all(
+              color: ProfileScreen._ink.withAlpha(30),
+              width: 2,
             ),
-            Positioned(
-              right: 0,
-              bottom: 0,
-              child: Container(
-                width: 36,
-                height: 36,
-                decoration: BoxDecoration(
-                  color: ProfileScreen._ink,
-                  shape: BoxShape.circle,
-                  border: Border.all(
-                    color: ProfileScreen._background,
-                    width: 3,
+            boxShadow: [
+              BoxShadow(
+                color: ProfileScreen._ink.withAlpha(15),
+                blurRadius: 16,
+                offset: const Offset(0, 6),
+              ),
+            ],
+          ),
+          child: user?.photoUrl != null
+              ? ClipOval(
+                  child: Image.network(
+                    user!.photoUrl!,
+                    fit: BoxFit.cover,
+                    errorBuilder: (ctx, err, stack) => const Icon(
+                      Icons.person,
+                      size: 60,
+                      color: ProfileScreen._ink,
+                    ),
+                  ),
+                )
+              : const ClipOval(
+                  child: Icon(
+                    Icons.person,
+                    size: 60,
+                    color: ProfileScreen._ink,
                   ),
                 ),
-                child: const Icon(
-                  Icons.edit,
-                  size: 18,
-                  color: Colors.white,
-                ),
-              ),
-            ),
-          ],
         ),
         const SizedBox(height: 18),
 
@@ -295,7 +847,26 @@ class _ProfileHeader extends StatelessWidget {
             fontWeight: FontWeight.w900,
           ),
         ),
-        const SizedBox(height: 8),
+        const SizedBox(height: 4),
+
+        // Career / role badge
+        if (user?.career != null && user!.career.isNotEmpty)
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+            decoration: BoxDecoration(
+              color: ProfileScreen._accent,
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Text(
+              user.career,
+              style: const TextStyle(
+                color: ProfileScreen._ink,
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+        const SizedBox(height: 10),
 
         // User biography
         if (user?.bio != null && user!.bio.isNotEmpty)
@@ -396,7 +967,8 @@ class _LoginPromptView extends StatelessWidget {
                   style: FilledButton.styleFrom(
                     backgroundColor: ProfileScreen._ink,
                     foregroundColor: Colors.white,
-                    textStyle: const TextStyle(fontWeight: FontWeight.w800),
+                    textStyle:
+                        const TextStyle(fontWeight: FontWeight.w800),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(16),
                     ),
@@ -422,8 +994,13 @@ class _EditProfileButton extends StatelessWidget {
   Widget build(BuildContext context) {
     return SizedBox(
       height: 48,
-      child: OutlinedButton(
+      child: OutlinedButton.icon(
         onPressed: onPressed,
+        icon: const Icon(Icons.edit_outlined, size: 18),
+        label: const Text(
+          'Editar perfil',
+          style: TextStyle(fontWeight: FontWeight.w800, fontSize: 14),
+        ),
         style: OutlinedButton.styleFrom(
           foregroundColor: ProfileScreen._ink,
           side: BorderSide(
@@ -434,11 +1011,36 @@ class _EditProfileButton extends StatelessWidget {
             borderRadius: BorderRadius.circular(24),
           ),
         ),
-        child: const Text(
-          'Edit Profile',
-          style: TextStyle(
-            fontWeight: FontWeight.w800,
-            fontSize: 15,
+      ),
+    );
+  }
+}
+
+/// Sign out button
+class _SignOutButton extends StatelessWidget {
+  const _SignOutButton({required this.onPressed});
+
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 48,
+      child: OutlinedButton.icon(
+        onPressed: onPressed,
+        icon: const Icon(Icons.logout_rounded, size: 18),
+        label: const Text(
+          'Cerrar sesión',
+          style: TextStyle(fontWeight: FontWeight.w800, fontSize: 14),
+        ),
+        style: OutlinedButton.styleFrom(
+          foregroundColor: const Color(0xFFB3261E),
+          side: const BorderSide(
+            color: Color(0xFFB3261E),
+            width: 1.5,
+          ),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(24),
           ),
         ),
       ),
@@ -458,7 +1060,7 @@ class _SectionTitle extends StatelessWidget {
       title,
       style: const TextStyle(
         color: ProfileScreen._ink,
-        fontSize: 22,
+        fontSize: 20,
         fontWeight: FontWeight.w900,
       ),
     );
@@ -517,7 +1119,6 @@ class _GroupsList extends StatelessWidget {
       ),
       child: Column(
         children: [
-          // Header with groups counter
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 14, 16, 12),
             child: Row(
@@ -531,32 +1132,15 @@ class _GroupsList extends StatelessWidget {
                     fontWeight: FontWeight.w700,
                   ),
                 ),
-                Container(
-                  padding: const EdgeInsets.all(6),
-                  decoration: const BoxDecoration(
-                    color: ProfileScreen._ink,
-                    shape: BoxShape.circle,
-                  ),
-                  child: const Icon(
-                    Icons.mail_outline,
-                    size: 18,
-                    color: Colors.white,
-                  ),
-                ),
               ],
             ),
           ),
-
           Divider(
             height: 1,
             thickness: 1,
             color: ProfileScreen._ink.withAlpha(15),
           ),
-
-          // Groups list
-          ...groups.map(
-            (group) => _GroupTile(group: group),
-          ),
+          ...groups.map((group) => _GroupTile(group: group)),
         ],
       ),
     );
@@ -575,7 +1159,6 @@ class _GroupTile extends StatelessWidget {
       color: Colors.transparent,
       child: InkWell(
         onTap: () {
-          // TODO: Navigate to group details
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text('Abriendo ${group.name}')),
           );
@@ -584,7 +1167,6 @@ class _GroupTile extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
           child: Row(
             children: [
-              // Group icon with first letter
               CircleAvatar(
                 radius: 24,
                 backgroundColor: ProfileScreen._accent,
@@ -598,8 +1180,6 @@ class _GroupTile extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 14),
-
-              // Group information
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -624,8 +1204,6 @@ class _GroupTile extends StatelessWidget {
                   ],
                 ),
               ),
-
-              // Navigation indicator
               const Icon(
                 Icons.chevron_right,
                 color: ProfileScreen._ink,
@@ -693,7 +1271,6 @@ class _EventTile extends StatelessWidget {
 
   final Event event;
 
-  /// Get icon for event type
   IconData _getEventIcon() {
     switch (event.eventTypeId) {
       case 1:
@@ -711,24 +1288,13 @@ class _EventTile extends StatelessWidget {
     }
   }
 
-  /// Format date for display
   String _formatDate() {
     final date = event.startDate;
     if (date == null) return 'Fecha por confirmar';
 
-    final months = [
-      'Ene',
-      'Feb',
-      'Mar',
-      'Abr',
-      'May',
-      'Jun',
-      'Jul',
-      'Ago',
-      'Sep',
-      'Oct',
-      'Nov',
-      'Dic'
+    const months = [
+      'Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun',
+      'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'
     ];
 
     final month = months[date.month - 1];
@@ -747,7 +1313,6 @@ class _EventTile extends StatelessWidget {
       child: InkWell(
         borderRadius: BorderRadius.circular(18),
         onTap: () {
-          // TODO: Navigate to event details
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text('Abriendo ${event.title}')),
           );
@@ -767,7 +1332,6 @@ class _EventTile extends StatelessWidget {
           ),
           child: Row(
             children: [
-              // Event image
               Container(
                 width: 64,
                 height: 64,
@@ -785,8 +1349,6 @@ class _EventTile extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 14),
-
-              // Event information
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
