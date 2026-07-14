@@ -10,8 +10,14 @@
     "test": "vitest",
     "cf-typegen": "wrangler types"
   },
+  "dependencies": {
+    "@tsndr/cloudflare-worker-jwt": "^3.2.1",
+    "bcryptjs": "^2.4.3",
+    "jose": "^5.9.6"
+  },
   "devDependencies": {
     "@cloudflare/vitest-pool-workers": "^0.12.4",
+    "@types/bcryptjs": "^2.4.6",
     "@types/node": "^26.0.1",
     "typescript": "^5.5.2",
     "vitest": "~3.2.0",

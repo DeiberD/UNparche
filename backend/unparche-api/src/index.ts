@@ -1,5 +1,9 @@
+import * as bcrypt from "bcryptjs";
+import jwt from "@tsndr/cloudflare-worker-jwt";
+
 type AppEnv = Env & {
 	unparche_db: D1Database;
+	JWT_SECRET: string;
 };
 
 type CrearEventoBody = {
@@ -233,6 +237,22 @@ const selectInvitacionGrupoById = async (db: D1Database, idInvitacion: number) =
 		.bind(idInvitacion)
 		.first();
 
+const verifyToken = async (request: Request, env: AppEnv) => {
+	const authHeader = request.headers.get("Authorization");
+	if (!authHeader || !authHeader.startsWith("Bearer ")) {
+		return null;
+	}
+	const token = authHeader.split(" ")[1];
+	try {
+		const isValid = await jwt.verify(token, env.JWT_SECRET || "default_secret_for_dev");
+		if (!isValid) return null;
+		const { payload } = jwt.decode(token);
+		return payload as any;
+	} catch {
+		return null;
+	}
+};
+
 export default {
 	async scheduled(_event, env, ctx): Promise<void> {
 		ctx.waitUntil(pruneExpiredEvents(env.unparche_db));
@@ -247,6 +267,97 @@ export default {
 
 		if (request.method === "GET" && url.pathname === "/") {
 			return json({ ok: true, message: "UNparche API" });
+		}
+
+		// POST /auth/register
+		if (request.method === "POST" && url.pathname === "/auth/register") {
+			let body: any;
+			try { body = await request.json(); } catch { return json({ ok: false, error: "JSON invalido" }, { status: 400 }); }
+			const { correo_institucional, contrasena, nombre, apellido } = body;
+
+			if (!correo_institucional || !correo_institucional.endsWith("@unal.edu.co") || !contrasena || !nombre) {
+				return json({ ok: false, error: "Datos invalidos o correo no institucional" }, { status: 400 });
+			}
+
+			try {
+				const hash = await bcrypt.hash(contrasena, 10);
+				const result = await env.unparche_db.prepare(
+					`INSERT INTO usuario (correo_institucional, contrasena_hash, nombre, apellido) VALUES (?, ?, ?, ?)`
+				).bind(correo_institucional.trim(), hash, nombre.trim(), apellido?.trim() || "").run();
+
+				const idUsuario = result.meta.last_row_id;
+				// exp: Unix timestamp de expiración (7 días desde ahora)
+				const exp = Math.floor(Date.now() / 1000) + 7 * 24 * 60 * 60;
+				const token = await jwt.sign({ id: idUsuario, correo: correo_institucional, exp }, env.JWT_SECRET || "default_secret_for_dev");
+
+				return json({ ok: true, usuario: { id_usuario: idUsuario, correo_institucional, nombre, apellido }, token }, { status: 201 });
+			} catch (e: any) {
+				if (e.message?.includes("UNIQUE")) {
+					return json({ ok: false, error: "El correo ya está registrado" }, { status: 409 });
+				}
+				return json({ ok: false, error: "Error interno al crear usuario" }, { status: 500 });
+			}
+		}
+
+		// POST /auth/login
+		if (request.method === "POST" && url.pathname === "/auth/login") {
+			let body: any;
+			try { body = await request.json(); } catch { return json({ ok: false, error: "JSON invalido" }, { status: 400 }); }
+			const { correo_institucional, contrasena } = body;
+			if (!correo_institucional || !contrasena) return json({ ok: false, error: "Credenciales requeridas" }, { status: 400 });
+
+			const usuario = await env.unparche_db.prepare(`SELECT id_usuario, contrasena_hash, nombre, apellido FROM usuario WHERE correo_institucional = ?`)
+				.bind(correo_institucional.trim()).first<{ id_usuario: number, contrasena_hash: string, nombre: string, apellido: string }>();
+
+			if (!usuario) return json({ ok: false, error: "Credenciales invalidas" }, { status: 401 });
+
+			const valid = await bcrypt.compare(contrasena, usuario.contrasena_hash);
+			if (!valid) return json({ ok: false, error: "Credenciales invalidas" }, { status: 401 });
+
+			// exp: Unix timestamp de expiración (7 días desde ahora)
+			const exp = Math.floor(Date.now() / 1000) + 7 * 24 * 60 * 60;
+			const token = await jwt.sign({ id: usuario.id_usuario, correo: correo_institucional, exp }, env.JWT_SECRET || "default_secret_for_dev");
+			return json({ ok: true, usuario: { id_usuario: usuario.id_usuario, correo_institucional, nombre: usuario.nombre, apellido: usuario.apellido }, token });
+		}
+
+		// GET /usuarios/me
+		if (request.method === "GET" && url.pathname === "/usuarios/me") {
+			const payload = await verifyToken(request, env as AppEnv);
+			if (!payload) return json({ ok: false, error: "No autorizado" }, { status: 401 });
+
+			const usuario = await env.unparche_db.prepare(
+				`SELECT id_usuario, correo_institucional, nombre, apellido, carrera, informacion_personal, rol, foto_perfil, fecha_creacion FROM usuario WHERE id_usuario = ?`
+			).bind(payload.id).first();
+			if (!usuario) return json({ ok: false, error: "Usuario no encontrado" }, { status: 404 });
+			return json({ ok: true, usuario });
+		}
+
+		// PATCH /usuarios/me
+		if (request.method === "PATCH" && url.pathname === "/usuarios/me") {
+			const payload = await verifyToken(request, env as AppEnv);
+			if (!payload) return json({ ok: false, error: "No autorizado" }, { status: 401 });
+
+			let body: any;
+			try { body = await request.json(); } catch { return json({ ok: false, error: "JSON invalido" }, { status: 400 }); }
+
+			const allowedUpdates = ["nombre", "apellido", "carrera", "informacion_personal", "foto_perfil"];
+			const updates = [];
+			const values = [];
+			for (const key of allowedUpdates) {
+				if (body[key] !== undefined) {
+					updates.push(`${key} = ?`);
+					values.push(body[key]);
+				}
+			}
+			if (updates.length === 0) return json({ ok: false, error: "No hay datos para actualizar" }, { status: 400 });
+
+			values.push(payload.id);
+			await env.unparche_db.prepare(`UPDATE usuario SET ${updates.join(", ")} WHERE id_usuario = ?`).bind(...values).run();
+
+			const usuario = await env.unparche_db.prepare(
+				`SELECT id_usuario, correo_institucional, nombre, apellido, carrera, informacion_personal, rol, foto_perfil, fecha_creacion FROM usuario WHERE id_usuario = ?`
+			).bind(payload.id).first();
+			return json({ ok: true, usuario });
 		}
 
 
@@ -803,7 +914,7 @@ export default {
 
 			return json({ ok: true, usuario });
 		}
-		
+
 		// GET eventos relacionados con un usuario (usuarios/:id/eventos)
 		const eventosUsuarioMatch = url.pathname.match(/^\/usuarios\/(\d+)\/eventos$/);
 
@@ -1433,7 +1544,7 @@ export default {
 				asistencia,
 			});
 		}
-	
+
 		// GET asistencias de un evento y confirmados (/eventos/:id/asistencias)
 		const asistenciasEventoMatch = url.pathname.match(/^\/eventos\/(\d+)\/asistencias$/);
 
@@ -1564,7 +1675,7 @@ export default {
 
 			return json({ ok: true, eventos: eventos.results });
 		}
-		
+
 
 		// POST eventos
 		if (request.method === "POST" && url.pathname === "/eventos") {

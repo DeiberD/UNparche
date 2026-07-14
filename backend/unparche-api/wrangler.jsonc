@@ -26,7 +26,10 @@
 		"crons": [
 			"0 * * * *"
 		]
-	}
+	},
+	// JWT_SECRET para desarrollo local.
+	// En producción usa: wrangler secret put JWT_SECRET
+	"vars": { "JWT_SECRET": "dev_secret_local_only_change_in_prod" }
 	/**
 	 * Smart Placement
 	 * https://developers.cloudflare.com/workers/configuration/smart-placement/#smart-placement
