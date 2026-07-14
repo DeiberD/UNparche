@@ -5,20 +5,6 @@ import 'event_api_client.dart';
 import 'flutter_chat/chat_message.dart';
 import 'flutter_chat/chat_socket_client.dart';
 
-const _configuredChatServerHost = String.fromEnvironment('CHAT_SERVER_HOST');
-const _chatServerPort = int.fromEnvironment(
-  'CHAT_SERVER_PORT',
-  defaultValue: 5000,
-);
-
-String get _chatServerHost {
-  if (_configuredChatServerHost.isNotEmpty) {
-    return _configuredChatServerHost;
-  }
-
-  return '186.31.167.146'; // IP PÚBLICA SERVER CHAT
-}
-
 enum EventTimeScope { future, past }
 
 class EventsListView extends StatelessWidget {
@@ -1026,9 +1012,9 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
       return;
     }
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message)),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
   }
 }
 
@@ -1169,8 +1155,8 @@ class _EventChatScreenState extends State<EventChatScreen> {
     }
 
     final client = ChatSocketClient(
-      host: _chatServerHost,
-      port: _chatServerPort,
+      host: ChatSocketClient.defaultHost,
+      port: ChatSocketClient.defaultPort,
     );
 
     _messagesSubscription = client.messages.listen(
@@ -1267,10 +1253,7 @@ class _EventChatScreenState extends State<EventChatScreen> {
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
-              'Chat',
-              style: TextStyle(fontWeight: FontWeight.w900),
-            ),
+            const Text('Chat', style: TextStyle(fontWeight: FontWeight.w900)),
             Text(
               eventTitle,
               maxLines: 1,
@@ -1339,7 +1322,8 @@ class _EmptyChatMessage extends StatelessWidget {
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 28),
         child: Text(
-          statusMessage ?? 'Todavia no hay mensajes. Se el primero en escribir.',
+          statusMessage ??
+              'Todavia no hay mensajes. Se el primero en escribir.',
           textAlign: TextAlign.center,
           style: TextStyle(
             color: EventsListView.ink.withAlpha(165),
@@ -1361,7 +1345,9 @@ class _ChatBubble extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final alignment = isMine ? CrossAxisAlignment.end : CrossAxisAlignment.start;
+    final alignment = isMine
+        ? CrossAxisAlignment.end
+        : CrossAxisAlignment.start;
     final bubbleColor = isMine ? EventsListView.ink : Colors.white;
     final textColor = isMine ? Colors.white : EventsListView.ink;
 
@@ -1518,10 +1504,7 @@ class _SendArrowIcon extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return CustomPaint(
-      size: const Size(21, 21),
-      painter: _SendArrowPainter(),
-    );
+    return CustomPaint(size: const Size(21, 21), painter: _SendArrowPainter());
   }
 }
 

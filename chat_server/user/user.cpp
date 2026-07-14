@@ -116,6 +116,18 @@ void User::handleLine(const std::string& line) {
 
     const std::string type = typeIt->as_string().c_str();
 
+    if (type == "new_event") {
+        auto contenidoIt = obj.if_contains("contenido");
+        if (!contenidoIt || !contenidoIt->is_number()) {
+            logError("new_event_invalid", "falta contenido numerico con id_evento");
+            return;
+        }
+
+        const int idEvento = static_cast<int>(contenidoIt->to_number<int64_t>());
+        handleNewEvent(idEvento);
+        return;
+    }
+
     if (type == "join") {
         if (joined_) {
             logInfo("join_ignored", "la conexion ya estaba autenticada");
@@ -169,6 +181,14 @@ void User::handleLine(const std::string& line) {
     }
 
     logError("unknown_type", type);
+}
+
+void User::handleNewEvent(int id_evento) {
+    const bool created = registry_.registerEvent(id_evento);
+    logInfo(
+        created ? "new_event_registered" : "new_event_ignored",
+        "id_evento=" + std::to_string(id_evento) +
+            (created ? " sala creada" : " sala ya existia o id invalido"));
 }
 
 void User::handleJoin(int id_evento, const std::string& nickname) {

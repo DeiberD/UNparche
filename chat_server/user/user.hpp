@@ -36,6 +36,7 @@ private:
 
     void readLine();
     void handleLine(const std::string& line);
+    void handleNewEvent(int id_evento);
     void handleJoin(int id_evento, const std::string& nickname);
     void handleMessage(const std::string& contenido);
     void doWrite();

@@ -13,6 +13,7 @@ class Chat;
 class ChatRegistry {
 public:
     void registerEvents(const std::vector<int>& eventIds);
+    bool registerEvent(int id_evento);
     std::shared_ptr<Chat> getChat(int id_evento);
     std::vector<int> registeredEventIds() const;
 
