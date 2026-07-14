@@ -4,6 +4,131 @@ import 'event_api_client.dart';
 
 enum EventTimeScope { future, past }
 
+abstract class _CalendarSelectionStrategy {
+  const _CalendarSelectionStrategy();
+
+  factory _CalendarSelectionStrategy.forScope(EventTimeScope scope) {
+    return switch (scope) {
+      EventTimeScope.future => const _FutureCalendarSelectionStrategy(),
+      EventTimeScope.past => const _PastCalendarSelectionStrategy(),
+    };
+  }
+
+  bool get showsMonthControls;
+
+  String title(DateTime visibleMonth);
+
+  Widget buildDateSelector({
+    required List<EventSummary> events,
+    required DateTime? selectedDate,
+    required DateTime visibleMonth,
+    required ValueChanged<DateTime?> onDateSelected,
+  });
+}
+
+class _FutureCalendarSelectionStrategy extends _CalendarSelectionStrategy {
+  const _FutureCalendarSelectionStrategy();
+
+  @override
+  bool get showsMonthControls => false;
+
+  @override
+  String title(DateTime visibleMonth) => 'Proximos 7 dias';
+
+  @override
+  Widget buildDateSelector({
+    required List<EventSummary> events,
+    required DateTime? selectedDate,
+    required DateTime visibleMonth,
+    required ValueChanged<DateTime?> onDateSelected,
+  }) {
+    final today = DateUtils.dateOnly(DateTime.now());
+    final days = List.generate(8, (index) {
+      final day = DateUtils.dateOnly(today.add(Duration(days: index)));
+      return _CalendarDateOption(
+        date: day,
+        eventCount: _eventCountForDay(events, day),
+        isSelected:
+            selectedDate != null && DateUtils.isSameDay(selectedDate, day),
+        isToday: DateUtils.isSameDay(day, today),
+        isEnabled: true,
+      );
+    });
+
+    return _FutureDaysStrip(days: days, onDateSelected: onDateSelected);
+  }
+}
+
+class _PastCalendarSelectionStrategy extends _CalendarSelectionStrategy {
+  const _PastCalendarSelectionStrategy();
+
+  @override
+  bool get showsMonthControls => true;
+
+  @override
+  String title(DateTime visibleMonth) => _calendarTitle(visibleMonth);
+
+  @override
+  Widget buildDateSelector({
+    required List<EventSummary> events,
+    required DateTime? selectedDate,
+    required DateTime visibleMonth,
+    required ValueChanged<DateTime?> onDateSelected,
+  }) {
+    final today = DateUtils.dateOnly(DateTime.now());
+    final days = _monthCells(visibleMonth).map((day) {
+      if (day == null) {
+        return null;
+      }
+
+      final dayOnly = DateUtils.dateOnly(day);
+      return _CalendarDateOption(
+        date: day,
+        eventCount: _eventCountForDay(events, day),
+        isSelected:
+            selectedDate != null && DateUtils.isSameDay(selectedDate, day),
+        isToday: false,
+        isEnabled: dayOnly.isBefore(today),
+      );
+    }).toList();
+
+    return _PastMonthCalendar(days: days, onDateSelected: onDateSelected);
+  }
+
+  static List<DateTime?> _monthCells(DateTime month) {
+    final firstDay = DateTime(month.year, month.month);
+    final daysInMonth = DateUtils.getDaysInMonth(month.year, month.month);
+    final leadingBlanks = firstDay.weekday - DateTime.monday;
+    final cells = <DateTime?>[
+      for (var index = 0; index < leadingBlanks; index++) null,
+      for (var day = 1; day <= daysInMonth; day++)
+        DateTime(month.year, month.month, day),
+    ];
+
+    while (cells.length % 7 != 0) {
+      cells.add(null);
+    }
+
+    return cells;
+  }
+}
+
+class _CalendarDateOption {
+  const _CalendarDateOption({
+    required this.date,
+    required this.eventCount,
+    required this.isSelected,
+    required this.isToday,
+    required this.isEnabled,
+  });
+
+  final DateTime date;
+  final int eventCount;
+  final bool isSelected;
+  final bool isToday;
+  final bool isEnabled;
+}
+
 class EventsListView extends StatelessWidget {
   const EventsListView({
     super.key,
@@ -145,6 +270,8 @@ class _EventCalendarStripState extends State<_EventCalendarStrip> {
 
   @override
   Widget build(BuildContext context) {
+    final strategy = _CalendarSelectionStrategy.forScope(widget.timeScope);
+
     return Container(
       padding: const EdgeInsets.fromLTRB(14, 14, 14, 14),
       decoration: BoxDecoration(
@@ -165,9 +292,7 @@ class _EventCalendarStripState extends State<_EventCalendarStrip> {
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
-                  widget.timeScope == EventTimeScope.future
-                      ? 'Proximos 7 dias'
-                      : _calendarTitle(_visibleMonth),
+                  strategy.title(_visibleMonth),
                   style: const TextStyle(
                     color: EventsListView.ink,
                     fontSize: 16,
@@ -175,7 +300,7 @@ class _EventCalendarStripState extends State<_EventCalendarStrip> {
                   ),
                 ),
               ),
-              if (widget.timeScope == EventTimeScope.past) ...[
+              if (strategy.showsMonthControls) ...[
                 IconButton(
                   tooltip: 'Mes anterior',
                   onPressed: () => _changeMonth(-1),
@@ -225,18 +350,12 @@ class _EventCalendarStripState extends State<_EventCalendarStrip> {
             ],
           ),
           const SizedBox(height: 14),
-          widget.timeScope == EventTimeScope.future
-              ? _FutureDaysStrip(
-                  events: widget.events,
-                  selectedDate: widget.selectedDate,
-                  onDateSelected: widget.onDateSelected,
-                )
-              : _PastMonthCalendar(
-                  events: widget.events,
-                  selectedDate: widget.selectedDate,
-                  visibleMonth: _visibleMonth,
-                  onDateSelected: widget.onDateSelected,
-                ),
+          strategy.buildDateSelector(
+            events: widget.events,
+            selectedDate: widget.selectedDate,
+            visibleMonth: _visibleMonth,
+            onDateSelected: widget.onDateSelected,
+          ),
         ],
       ),
     );
@@ -265,39 +384,25 @@ class _EventCalendarStripState extends State<_EventCalendarStrip> {
 }
 
 class _FutureDaysStrip extends StatelessWidget {
-  const _FutureDaysStrip({
-    required this.events,
-    required this.selectedDate,
-    required this.onDateSelected,
-  });
+  const _FutureDaysStrip({required this.days, required this.onDateSelected});
 
-  final List<EventSummary> events;
-  final DateTime? selectedDate;
+  final List<_CalendarDateOption> days;
   final ValueChanged<DateTime?> onDateSelected;
 
   @override
   Widget build(BuildContext context) {
-    final today = DateUtils.dateOnly(DateTime.now());
-    final days = List.generate(8, (index) {
-      return DateUtils.dateOnly(today.add(Duration(days: index)));
-    });
-
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
       child: Row(
         children: days.map((day) {
-          final isSelected =
-              selectedDate != null && DateUtils.isSameDay(selectedDate, day);
-          final isToday = DateUtils.isSameDay(day, today);
-          final count = _eventCountForDay(events, day);
           return Padding(
             padding: const EdgeInsets.only(right: 8),
             child: _FutureDayButton(
-              date: day,
-              eventCount: count,
-              isSelected: isSelected,
-              isToday: isToday,
-              onTap: () => onDateSelected(day),
+              date: day.date,
+              eventCount: day.eventCount,
+              isSelected: day.isSelected,
+              isToday: day.isToday,
+              onTap: () => onDateSelected(day.date),
             ),
           );
         }).toList(),
@@ -307,23 +412,13 @@ class _FutureDaysStrip extends StatelessWidget {
 }
 
 class _PastMonthCalendar extends StatelessWidget {
-  const _PastMonthCalendar({
-    required this.events,
-    required this.selectedDate,
-    required this.visibleMonth,
-    required this.onDateSelected,
-  });
+  const _PastMonthCalendar({required this.days, required this.onDateSelected});
 
-  final List<EventSummary> events;
-  final DateTime? selectedDate;
-  final DateTime visibleMonth;
+  final List<_CalendarDateOption?> days;
   final ValueChanged<DateTime?> onDateSelected;
 
   @override
   Widget build(BuildContext context) {
-    final days = _monthCells(visibleMonth);
-    final today = DateUtils.dateOnly(DateTime.now());
-
     return Column(
       children: [
         Row(
@@ -354,40 +449,18 @@ class _PastMonthCalendar extends StatelessWidget {
               return const SizedBox.shrink();
             }
 
-            final dayOnly = DateUtils.dateOnly(day);
-            final isSelectable = dayOnly.isBefore(today);
-            final isSelected =
-                selectedDate != null && DateUtils.isSameDay(selectedDate, day);
-            final count = _eventCountForDay(events, day);
             return _CalendarDayButton(
-              date: day,
-              eventCount: count,
-              isSelected: isSelected,
-              isToday: false,
-              isEnabled: isSelectable,
-              onTap: isSelectable ? () => onDateSelected(day) : null,
+              date: day.date,
+              eventCount: day.eventCount,
+              isSelected: day.isSelected,
+              isToday: day.isToday,
+              isEnabled: day.isEnabled,
+              onTap: day.isEnabled ? () => onDateSelected(day.date) : null,
             );
           },
         ),
       ],
     );
-  }
-
-  static List<DateTime?> _monthCells(DateTime month) {
-    final firstDay = DateTime(month.year, month.month);
-    final daysInMonth = DateUtils.getDaysInMonth(month.year, month.month);
-    final leadingBlanks = firstDay.weekday - DateTime.monday;
-    final cells = <DateTime?>[
-      for (var index = 0; index < leadingBlanks; index++) null,
-      for (var day = 1; day <= daysInMonth; day++)
-        DateTime(month.year, month.month, day),
-    ];
-
-    while (cells.length % 7 != 0) {
-      cells.add(null);
-    }
-
-    return cells;
   }
 }
 
@@ -979,9 +1052,9 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
       return;
     }
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message)),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
   }
 }
 
