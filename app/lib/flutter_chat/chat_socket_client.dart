@@ -24,14 +24,19 @@ class ChatSocketException implements Exception {
 /// por '\n'.
 ///
 /// La "sesion" del usuario en el chat es la vida de este socket: no hay
-/// login. Al conectar se manda un mensaje "join" con id_evento + nickname;
+/// login. Al conectar se manda un mensaje "join" con id_evento + correo
+/// institucional + nickname;
 /// el server responde con un ack "joined" y de ahi en adelante retransmite
 /// cualquier mensaje ("type": "message") que llegue a esa sala.
 ///
 /// Uso tipico:
 /// ```dart
 /// final client = ChatSocketClient(host: '1.2.3.4', port: 5000);
-/// await client.connectAndJoin(idEvento: 42, nickname: 'Pedro');
+/// await client.connectAndJoin(
+///   idEvento: 42,
+///   correo: 'pquintero@unal.edu.co',
+///   nickname: 'Pedro',
+/// );
 /// client.messages.listen((msg) => print('${msg.nickname}: ${msg.contenido}'));
 /// client.sendMessage('Hola a todos');
 /// ...
@@ -110,10 +115,14 @@ class ChatSocketClient {
   /// [ChatSocketException] si no logra conectar.
   Future<void> connectAndJoin({
     required int idEvento,
+    required String correo,
     required String nickname,
     Duration timeout = const Duration(seconds: 8),
   }) async {
-    if (nickname.trim().isEmpty) {
+    if (correo.trim().isEmpty) {
+      throw ChatSocketException('El correo no puede estar vacio.');
+    }
+    if (nickname.isEmpty) {
       throw ChatSocketException('El nickname no puede estar vacio.');
     }
 
@@ -143,7 +152,8 @@ class ChatSocketClient {
       _writeJson({
         'type': 'join',
         'id_evento': idEvento,
-        'nickname': nickname.trim(),
+        'correo': correo.trim(),
+        'nickname': nickname,
       });
     } on SocketException catch (e) {
       throw ChatSocketException('No se pudo conectar al chat: ${e.message}');

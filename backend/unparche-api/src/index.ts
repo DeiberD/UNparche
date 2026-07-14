@@ -421,7 +421,7 @@ export default {
 				const exp = Math.floor(Date.now() / 1000) + 7 * 24 * 60 * 60;
 				const token = await jwt.sign({ id: idUsuario, correo: correo_institucional, exp }, env.JWT_SECRET || "default_secret_for_dev");
 
-				return json({ ok: true, usuario: { id_usuario: idUsuario, correo_institucional, nombre, apellido }, token }, { status: 201 });
+				return json({ ok: true, usuario: { id_usuario: idUsuario, correo_institucional, nombre, apellido, nickname: null }, token }, { status: 201 });
 			} catch (e: any) {
 				if (e.message?.includes("UNIQUE")) {
 					return json({ ok: false, error: "El correo ya está registrado" }, { status: 409 });
@@ -437,8 +437,8 @@ export default {
 			const { correo_institucional, contrasena } = body;
 			if (!correo_institucional || !contrasena) return json({ ok: false, error: "Credenciales requeridas" }, { status: 400 });
 
-			const usuario = await env.unparche_db.prepare(`SELECT id_usuario, contrasena_hash, nombre, apellido FROM usuario WHERE correo_institucional = ?`)
-				.bind(correo_institucional.trim()).first<{ id_usuario: number, contrasena_hash: string, nombre: string, apellido: string }>();
+			const usuario = await env.unparche_db.prepare(`SELECT id_usuario, contrasena_hash, nombre, apellido, nickname FROM usuario WHERE correo_institucional = ?`)
+				.bind(correo_institucional.trim()).first<{ id_usuario: number, contrasena_hash: string, nombre: string, apellido: string, nickname: string | null }>();
 
 			if (!usuario) return json({ ok: false, error: "Credenciales invalidas" }, { status: 401 });
 
@@ -448,7 +448,7 @@ export default {
 			// exp: Unix timestamp de expiración (7 días desde ahora)
 			const exp = Math.floor(Date.now() / 1000) + 7 * 24 * 60 * 60;
 			const token = await jwt.sign({ id: usuario.id_usuario, correo: correo_institucional, exp }, env.JWT_SECRET || "default_secret_for_dev");
-			return json({ ok: true, usuario: { id_usuario: usuario.id_usuario, correo_institucional, nombre: usuario.nombre, apellido: usuario.apellido }, token });
+			return json({ ok: true, usuario: { id_usuario: usuario.id_usuario, correo_institucional, nombre: usuario.nombre, apellido: usuario.apellido, nickname: usuario.nickname }, token });
 		}
 
 		// GET /usuarios/me
@@ -457,7 +457,7 @@ export default {
 			if (!payload) return json({ ok: false, error: "No autorizado" }, { status: 401 });
 
 			const usuario = await env.unparche_db.prepare(
-				`SELECT id_usuario, correo_institucional, nombre, apellido, carrera, informacion_personal, rol, foto_perfil, fecha_creacion FROM usuario WHERE id_usuario = ?`
+				`SELECT id_usuario, correo_institucional, nombre, apellido, nickname, carrera, informacion_personal, rol, foto_perfil, fecha_creacion FROM usuario WHERE id_usuario = ?`
 			).bind(payload.id).first();
 			if (!usuario) return json({ ok: false, error: "Usuario no encontrado" }, { status: 404 });
 			return json({ ok: true, usuario });
@@ -471,13 +471,13 @@ export default {
 			let body: any;
 			try { body = await request.json(); } catch { return json({ ok: false, error: "JSON invalido" }, { status: 400 }); }
 
-			const allowedUpdates = ["nombre", "apellido", "carrera", "informacion_personal", "foto_perfil"];
+			const allowedUpdates = ["nombre", "apellido", "nickname", "carrera", "informacion_personal", "foto_perfil"];
 			const updates = [];
 			const values = [];
 			for (const key of allowedUpdates) {
 				if (body[key] !== undefined) {
 					updates.push(`${key} = ?`);
-					values.push(body[key]);
+					values.push(key === "nickname" && typeof body[key] === "string" && body[key].trim() === "" ? null : body[key]);
 				}
 			}
 			if (updates.length === 0) return json({ ok: false, error: "No hay datos para actualizar" }, { status: 400 });
@@ -486,7 +486,7 @@ export default {
 			await env.unparche_db.prepare(`UPDATE usuario SET ${updates.join(", ")} WHERE id_usuario = ?`).bind(...values).run();
 
 			const usuario = await env.unparche_db.prepare(
-				`SELECT id_usuario, correo_institucional, nombre, apellido, carrera, informacion_personal, rol, foto_perfil, fecha_creacion FROM usuario WHERE id_usuario = ?`
+				`SELECT id_usuario, correo_institucional, nombre, apellido, nickname, carrera, informacion_personal, rol, foto_perfil, fecha_creacion FROM usuario WHERE id_usuario = ?`
 			).bind(payload.id).first();
 			return json({ ok: true, usuario });
 		}

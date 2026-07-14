@@ -20,13 +20,9 @@ class _LoginScreenState extends State<LoginScreen> {
 
     setState(() => _isLoading = true);
     try {
-      await AuthProvider.of(context).login(
-        _emailController.text.trim(),
-        _passwordController.text,
-      );
-      if (mounted) {
-        Navigator.pop(context); // Regresa a la pantalla anterior
-      }
+      await AuthProvider.of(
+        context,
+      ).login(_emailController.text.trim(), _passwordController.text);
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -39,9 +35,9 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   void _showNotImplemented(String feature) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('$feature está en construcción.')),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text('$feature está en construcción.')));
   }
 
   @override
@@ -68,7 +64,11 @@ class _LoginScreenState extends State<LoginScreen> {
               children: [
                 const Text(
                   'Bienvenido a UNparche',
-                  style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: ink),
+                  style: TextStyle(
+                    fontSize: 24,
+                    fontWeight: FontWeight.bold,
+                    color: ink,
+                  ),
                   textAlign: TextAlign.center,
                 ),
                 const SizedBox(height: 32),
@@ -95,13 +95,15 @@ class _LoginScreenState extends State<LoginScreen> {
                     border: OutlineInputBorder(),
                   ),
                   obscureText: true,
-                  validator: (value) => (value == null || value.isEmpty) ? 'Requerida' : null,
+                  validator: (value) =>
+                      (value == null || value.isEmpty) ? 'Requerida' : null,
                 ),
                 const SizedBox(height: 8),
                 Align(
                   alignment: Alignment.centerRight,
                   child: TextButton(
-                    onPressed: () => _showNotImplemented('Restablecer contraseña'),
+                    onPressed: () =>
+                        _showNotImplemented('Restablecer contraseña'),
                     child: const Text('¿Olvidaste tu contraseña?'),
                   ),
                 ),
@@ -114,15 +116,28 @@ class _LoginScreenState extends State<LoginScreen> {
                     padding: const EdgeInsets.symmetric(vertical: 16),
                   ),
                   child: _isLoading
-                      ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                      : const Text('Iniciar sesión', style: TextStyle(fontSize: 16)),
+                      ? const SizedBox(
+                          height: 20,
+                          width: 20,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
+                      : const Text(
+                          'Iniciar sesión',
+                          style: TextStyle(fontSize: 16),
+                        ),
                 ),
                 const SizedBox(height: 16),
                 OutlinedButton.icon(
-                  onPressed: () => _showNotImplemented('Inicio de sesión con Google'),
+                  onPressed: () =>
+                      _showNotImplemented('Inicio de sesión con Google'),
                   icon: const Icon(Icons.g_mobiledata, size: 28),
                   label: const Text('Iniciar sesión con Google (Próximamente)'),
-                  style: OutlinedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 16)),
+                  style: OutlinedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                  ),
                 ),
                 const SizedBox(height: 32),
                 Row(
@@ -133,7 +148,9 @@ class _LoginScreenState extends State<LoginScreen> {
                       onPressed: () {
                         Navigator.pushReplacement(
                           context,
-                          MaterialPageRoute(builder: (_) => const RegisterScreen()),
+                          MaterialPageRoute(
+                            builder: (_) => const RegisterScreen(),
+                          ),
                         );
                       },
                       child: const Text('Regístrate'),

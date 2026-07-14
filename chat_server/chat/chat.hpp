@@ -18,7 +18,10 @@ public:
 
     // Recibe un mensaje ya validado, lo hace broadcast a todos los
     // usuarios conectados a esta sala y dispara la persistencia async.
-    void receiveMessage(const std::string& nickname, const std::string& contenido);
+    void receiveMessage(
+        const std::string& correo,
+        const std::string& nickname,
+        const std::string& contenido);
 
     size_t userCount() const { return users_.size(); }
 

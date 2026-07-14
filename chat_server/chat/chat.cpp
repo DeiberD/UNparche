@@ -17,8 +17,11 @@ void Chat::removeUser(User* user) {
         users_.end());
 }
 
-void Chat::receiveMessage(const std::string& nickname, const std::string& contenido) {
-    Message message{ id_evento_, nickname, contenido, Message::now_ms() };
+void Chat::receiveMessage(
+    const std::string& correo,
+    const std::string& nickname,
+    const std::string& contenido) {
+    Message message{ id_evento_, correo, nickname, contenido, Message::now_ms() };
     const std::string jsonLine = message.toJsonLine();
 
     // Guardar en el historial en memoria

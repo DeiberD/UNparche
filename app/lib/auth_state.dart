@@ -6,14 +6,10 @@ class AuthState {
   final User? currentUser;
   final String? token;
   final bool isLoading;
-  
+
   bool get isAuthenticated => token != null && currentUser != null;
 
-  AuthState({
-    this.currentUser,
-    this.token,
-    this.isLoading = true,
-  });
+  AuthState({this.currentUser, this.token, this.isLoading = true});
 
   AuthState copyWith({
     User? currentUser,
@@ -43,13 +39,21 @@ class AuthNotifier extends ValueNotifier<AuthState> {
       final token = await _storage.read(key: 'jwt_token');
       if (token != null) {
         final user = await _apiClient.getCurrentUser(token);
-        value = value.copyWith(currentUser: user, token: token, isLoading: false);
+        value = value.copyWith(
+          currentUser: user,
+          token: token,
+          isLoading: false,
+        );
       } else {
         value = value.copyWith(isLoading: false);
       }
     } catch (e) {
       await _storage.delete(key: 'jwt_token');
-      value = value.copyWith(isLoading: false, clearUser: true, clearToken: true);
+      value = value.copyWith(
+        isLoading: false,
+        clearUser: true,
+        clearToken: true,
+      );
     }
   }
 
@@ -59,36 +63,38 @@ class AuthNotifier extends ValueNotifier<AuthState> {
       final result = await _apiClient.login(correo, contrasena);
       final token = result['token'] as String;
       final userData = result['usuario'];
-      
+
       await _storage.write(key: 'jwt_token', value: token);
       final user = User.fromJson(userData);
-      
-      value = value.copyWith(
-        currentUser: user,
-        token: token,
-        isLoading: false,
-      );
+
+      value = value.copyWith(currentUser: user, token: token, isLoading: false);
     } catch (e) {
       value = value.copyWith(isLoading: false);
       rethrow;
     }
   }
 
-  Future<void> register(String nombre, String apellido, String correo, String contrasena) async {
+  Future<void> register(
+    String nombre,
+    String apellido,
+    String correo,
+    String contrasena,
+  ) async {
     value = value.copyWith(isLoading: true);
     try {
-      final result = await _apiClient.register(nombre, apellido, correo, contrasena);
+      final result = await _apiClient.register(
+        nombre,
+        apellido,
+        correo,
+        contrasena,
+      );
       final token = result['token'] as String;
       final userData = result['usuario'];
-      
+
       await _storage.write(key: 'jwt_token', value: token);
       final user = User.fromJson(userData);
-      
-      value = value.copyWith(
-        currentUser: user,
-        token: token,
-        isLoading: false,
-      );
+
+      value = value.copyWith(currentUser: user, token: token, isLoading: false);
     } catch (e) {
       value = value.copyWith(isLoading: false);
       rethrow;
@@ -97,16 +103,12 @@ class AuthNotifier extends ValueNotifier<AuthState> {
 
   Future<void> logout() async {
     await _storage.delete(key: 'jwt_token');
-    value = value.copyWith(
-      clearUser: true,
-      clearToken: true,
-      isLoading: false,
-    );
+    value = value.copyWith(clearUser: true, clearToken: true, isLoading: false);
   }
-  
+
   Future<void> updateProfile(Map<String, dynamic> updates) async {
     if (value.token == null) return;
-    
+
     value = value.copyWith(isLoading: true);
     try {
       final updatedUser = await _apiClient.updateProfile(value.token!, updates);
