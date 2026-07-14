@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'auth_state.dart';
 
 /// User profile screen
 ///
@@ -8,7 +9,7 @@ import 'package:flutter/material.dart';
 /// - Edit profile button
 /// - User's groups list
 /// - Upcoming events list
-class ProfileScreen extends StatelessWidget {
+class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
 
   // Colors consistent with the rest of the application
@@ -18,24 +19,151 @@ class ProfileScreen extends StatelessWidget {
   static const _accent = Color(0xFFEEDDF0);
 
   @override
+  State<ProfileScreen> createState() => _ProfileScreenState();
+}
+
+class _ProfileScreenState extends State<ProfileScreen> {
+  /// Muestra un diálogo para editar nombre, apellido, carrera e información personal.
+  /// Patrón: Dialog + async mutation a través del estado global (AuthNotifier).
+  void _showEditProfileDialog(BuildContext context) {
+    final authNotifier = AuthProvider.of(context);
+    final user = authNotifier.value.currentUser;
+
+    final nameCtrl = TextEditingController(text: user?.nombre ?? '');
+    final lastNameCtrl = TextEditingController(text: user?.apellido ?? '');
+    final nicknameCtrl = TextEditingController(text: user?.nickname ?? '');
+    final carreraCtrl = TextEditingController(text: user?.carrera ?? '');
+    final infoCtrl = TextEditingController(
+      text: user?.informacionPersonal ?? '',
+    );
+    final formKey = GlobalKey<FormState>();
+
+    showDialog(
+      context: context,
+      builder: (dialogCtx) => AlertDialog(
+        title: const Text('Editar Perfil'),
+        content: SingleChildScrollView(
+          child: Form(
+            key: formKey,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextFormField(
+                  controller: nameCtrl,
+                  decoration: const InputDecoration(
+                    labelText: 'Nombre',
+                    border: OutlineInputBorder(),
+                  ),
+                  validator: (v) =>
+                      (v == null || v.isEmpty) ? 'Requerido' : null,
+                ),
+                const SizedBox(height: 12),
+                TextFormField(
+                  controller: lastNameCtrl,
+                  decoration: const InputDecoration(
+                    labelText: 'Apellido',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextFormField(
+                  controller: nicknameCtrl,
+                  decoration: const InputDecoration(
+                    labelText: 'Nickname',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextFormField(
+                  controller: carreraCtrl,
+                  decoration: const InputDecoration(
+                    labelText: 'Carrera',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextFormField(
+                  controller: infoCtrl,
+                  decoration: const InputDecoration(
+                    labelText: 'Información personal',
+                    border: OutlineInputBorder(),
+                  ),
+                  maxLines: 2,
+                ),
+              ],
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogCtx),
+            child: const Text('Cancelar'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: ProfileScreen._ink,
+              foregroundColor: Colors.white,
+            ),
+            onPressed: () async {
+              if (!formKey.currentState!.validate()) return;
+              Navigator.pop(dialogCtx);
+              try {
+                await authNotifier.updateProfile({
+                  'nombre': nameCtrl.text.trim(),
+                  'apellido': lastNameCtrl.text.trim(),
+                  'nickname': nicknameCtrl.text.trim().isEmpty
+                      ? null
+                      : nicknameCtrl.text.trim(),
+                  'carrera': carreraCtrl.text.trim(),
+                  'informacion_personal': infoCtrl.text.trim(),
+                });
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Perfil actualizado.')),
+                  );
+                }
+              } catch (e) {
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(
+                        'Error: ${e.toString().replaceAll("Exception: ", "")}',
+                      ),
+                    ),
+                  );
+                }
+              }
+            },
+            child: const Text('Guardar'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: _background,
+      backgroundColor: ProfileScreen._background,
       appBar: AppBar(
-        backgroundColor: _background,
-        foregroundColor: _ink,
+        backgroundColor: ProfileScreen._background,
+        foregroundColor: ProfileScreen._ink,
         title: const Text(
           'Perfil',
           style: TextStyle(fontWeight: FontWeight.w800),
         ),
-        // TODO: Implement search functionality
-        // actions: [
-        //   IconButton(
-        //     icon: const Icon(Icons.search),
-        //     onPressed: () {},
-        //     tooltip: 'Buscar',
-        //   ),
-        // ],
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.logout),
+            onPressed: () async {
+              await AuthProvider.of(context).logout();
+              if (context.mounted) {
+                Navigator.of(context).popUntil((route) => route.isFirst);
+              }
+            },
+            tooltip: 'Cerrar sesión',
+          ),
+        ],
       ),
       body: SafeArea(
         child: ListView(
@@ -47,25 +175,18 @@ class ProfileScreen extends StatelessWidget {
 
             // Edit profile button
             _EditProfileButton(
-              onPressed: () {
-                // TODO: Navigate to profile edit screen
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Edición de perfil próximamente'),
-                  ),
-                );
-              },
+              onPressed: () => _showEditProfileDialog(context),
             ),
             const SizedBox(height: 32),
 
             // Groups section
-            const _SectionTitle(title: 'My Groups'),
+            const _SectionTitle(title: 'Mis Grupos'),
             const SizedBox(height: 12),
             const _GroupsList(),
             const SizedBox(height: 32),
 
             // Upcoming events section
-            const _SectionTitle(title: 'Upcoming Events'),
+            const _SectionTitle(title: 'Próximos Eventos'),
             const SizedBox(height: 12),
             const _UpcomingEventsList(),
           ],
@@ -81,6 +202,16 @@ class _ProfileHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final authState = AuthProvider.of(context).value;
+    final user = authState.currentUser;
+    final fullName = user != null
+        ? '${user.nombre} ${user.apellido}'
+        : 'Cargando...';
+    final nickname = user?.nickname;
+    final email = user?.correoInstitucional ?? '';
+    final carrera = user?.carrera ?? '';
+    final info = user?.informacionPersonal ?? 'Agrega información personal.';
+
     return Column(
       children: [
         // Profile photo with edit button
@@ -104,12 +235,14 @@ class _ProfileHeader extends StatelessWidget {
                   ),
                 ],
               ),
-              child: const ClipOval(
-                child: Icon(
-                  Icons.person,
-                  size: 60,
-                  color: ProfileScreen._ink,
-                ),
+              child: ClipOval(
+                child: user?.fotoPerfil != null
+                    ? Image.network(user!.fotoPerfil!, fit: BoxFit.cover)
+                    : const Icon(
+                        Icons.person,
+                        size: 60,
+                        color: ProfileScreen._ink,
+                      ),
               ),
             ),
             Positioned(
@@ -126,11 +259,7 @@ class _ProfileHeader extends StatelessWidget {
                     width: 3,
                   ),
                 ),
-                child: const Icon(
-                  Icons.edit,
-                  size: 18,
-                  color: Colors.white,
-                ),
+                child: const Icon(Icons.edit, size: 18, color: Colors.white),
               ),
             ),
           ],
@@ -138,9 +267,9 @@ class _ProfileHeader extends StatelessWidget {
         const SizedBox(height: 18),
 
         // User name
-        const Text(
-          'Deiber Gongora',
-          style: TextStyle(
+        Text(
+          fullName,
+          style: const TextStyle(
             color: ProfileScreen._ink,
             fontSize: 26,
             fontWeight: FontWeight.w900,
@@ -148,9 +277,22 @@ class _ProfileHeader extends StatelessWidget {
         ),
         const SizedBox(height: 8),
 
+        if (nickname != null && nickname.trim().isNotEmpty) ...[
+          Text(
+            '@${nickname.trim()}',
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              color: ProfileScreen._ink,
+              fontSize: 15,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(height: 8),
+        ],
+
         // User biography
         Text(
-          'Systems Engineering student 🎓 | French learner 🇫🇷',
+          email,
           textAlign: TextAlign.center,
           style: TextStyle(
             color: ProfileScreen._ink.withAlpha(180),
@@ -160,7 +302,17 @@ class _ProfileHeader extends StatelessWidget {
         ),
         const SizedBox(height: 6),
         Text(
-          'Always looking for optimization problems.',
+          carrera.isNotEmpty ? carrera : 'Carrera no especificada',
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            color: ProfileScreen._ink.withAlpha(150),
+            fontSize: 13,
+            height: 1.3,
+          ),
+        ),
+        const SizedBox(height: 6),
+        Text(
+          info,
           textAlign: TextAlign.center,
           style: TextStyle(
             color: ProfileScreen._ink.withAlpha(150),
@@ -187,20 +339,14 @@ class _EditProfileButton extends StatelessWidget {
         onPressed: onPressed,
         style: OutlinedButton.styleFrom(
           foregroundColor: ProfileScreen._ink,
-          side: BorderSide(
-            color: ProfileScreen._ink.withAlpha(100),
-            width: 2,
-          ),
+          side: BorderSide(color: ProfileScreen._ink.withAlpha(100), width: 2),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(24),
           ),
         ),
         child: const Text(
           'Edit Profile',
-          style: TextStyle(
-            fontWeight: FontWeight.w800,
-            fontSize: 15,
-          ),
+          style: TextStyle(fontWeight: FontWeight.w800, fontSize: 15),
         ),
       ),
     );
@@ -302,9 +448,7 @@ class _GroupsList extends StatelessWidget {
           ),
 
           // Groups list
-          ...groups.map(
-            (group) => _GroupTile(group: group),
-          ),
+          ...groups.map((group) => _GroupTile(group: group)),
         ],
       ),
     );
@@ -341,9 +485,9 @@ class _GroupTile extends StatelessWidget {
       child: InkWell(
         onTap: () {
           // TODO: Navigate to group details
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Abriendo ${group.name}')),
-          );
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(SnackBar(content: Text('Abriendo ${group.name}')));
         },
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
@@ -467,9 +611,9 @@ class _EventTile extends StatelessWidget {
         borderRadius: BorderRadius.circular(18),
         onTap: () {
           // TODO: Navigate to event details
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Abriendo ${event.title}')),
-          );
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(SnackBar(content: Text('Abriendo ${event.title}')));
         },
         child: Container(
           padding: const EdgeInsets.all(14),
@@ -493,9 +637,7 @@ class _EventTile extends StatelessWidget {
                 decoration: BoxDecoration(
                   color: ProfileScreen._surface,
                   borderRadius: BorderRadius.circular(14),
-                  border: Border.all(
-                    color: ProfileScreen._ink.withAlpha(20),
-                  ),
+                  border: Border.all(color: ProfileScreen._ink.withAlpha(20)),
                 ),
                 child: Icon(
                   event.imageIcon,

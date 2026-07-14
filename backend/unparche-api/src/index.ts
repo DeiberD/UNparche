@@ -1,5 +1,10 @@
+import * as bcrypt from "bcryptjs";
+import jwt from "@tsndr/cloudflare-worker-jwt";
+
 type AppEnv = Env & {
 	unparche_db: D1Database;
+	CHAT_INTERNAL_TOKEN?: string;
+	JWT_SECRET: string;
 };
 
 type CrearEventoBody = {
@@ -51,6 +56,13 @@ type ActualizarEventoBody = {
 	id_grupo?: number | null;
 	chat_habilitado?: boolean;
 	estado?: "PROGRAMADO" | "CANCELADO" | "FINALIZADO";
+};
+
+type CrearMensajeChatBody = {
+	id_evento?: number;
+	nickname?: string;
+	contenido?: string;
+	timestamp_ms?: number;
 };
 
 const EVENT_RETENTION_HOURS = 24;
@@ -233,6 +245,22 @@ const selectInvitacionGrupoById = async (db: D1Database, idInvitacion: number) =
 		.bind(idInvitacion)
 		.first();
 
+const verifyToken = async (request: Request, env: AppEnv) => {
+	const authHeader = request.headers.get("Authorization");
+	if (!authHeader || !authHeader.startsWith("Bearer ")) {
+		return null;
+	}
+	const token = authHeader.split(" ")[1];
+	try {
+		const isValid = await jwt.verify(token, env.JWT_SECRET || "default_secret_for_dev");
+		if (!isValid) return null;
+		const { payload } = jwt.decode(token);
+		return payload as any;
+	} catch {
+		return null;
+	}
+};
+
 export default {
 	async scheduled(_event, env, ctx): Promise<void> {
 		ctx.waitUntil(pruneExpiredEvents(env.unparche_db));
@@ -247,6 +275,220 @@ export default {
 
 		if (request.method === "GET" && url.pathname === "/") {
 			return json({ ok: true, message: "UNparche API" });
+		}
+
+		// POST /internal/mensajes
+		// Llamado exclusivamente por el chat server en C++ (boost::asio),
+		// de forma fire-and-forget cada vez que llega un mensaje nuevo a
+		// una sala de chat. Persiste el mensaje en mensaje_chat para que
+		// quede historial, tal como pide RN-19 / HU-20. No hay auth de
+		// usuarios todavia, asi que el remitente se identifica solo por
+		// nickname (string libre elegido en el cliente Flutter).
+		if (request.method === "POST" && url.pathname === "/internal/mensajes") {
+			const internalToken = env.CHAT_INTERNAL_TOKEN;
+
+			if (internalToken) {
+				const receivedToken = request.headers.get("X-Internal-Token");
+
+				if (receivedToken !== internalToken) {
+					return json({ ok: false, error: "Token interno invalido." }, { status: 401 });
+				}
+			}
+
+			let body: CrearMensajeChatBody;
+
+			try {
+				body = await request.json();
+			} catch {
+				return json({ ok: false, error: "El body debe ser JSON valido." }, { status: 400 });
+			}
+
+			const idEvento = toInteger(body.id_evento);
+			const nickname = typeof body.nickname === "string" ? body.nickname.trim() : "";
+			const contenido = typeof body.contenido === "string" ? body.contenido.trim() : "";
+
+			if (idEvento === null || !nickname || !contenido) {
+				return json(
+					{
+						ok: false,
+						error: "id_evento, nickname y contenido son obligatorios y deben tener formato valido.",
+					},
+					{ status: 400 }
+				);
+			}
+
+			// contenido esta acotado a VARCHAR(300) en el schema MySQL; se
+			// recorta defensivamente para evitar fallos de insercion si
+			// llega algo mas largo (el chat server no valida longitud).
+			const contenidoRecortado = contenido.slice(0, 300);
+
+			const fechaEnvio = typeof body.timestamp_ms === "number" && Number.isFinite(body.timestamp_ms)
+				? new Date(body.timestamp_ms).toISOString()
+				: new Date().toISOString();
+
+			try {
+				const result = await env.unparche_db
+					.prepare(
+						`INSERT INTO mensaje_chat (
+							contenido,
+							nickname,
+							fecha_envio,
+							id_evento
+						) VALUES (?, ?, ?, ?)`
+					)
+					.bind(contenidoRecortado, nickname, fechaEnvio, idEvento)
+					.run();
+
+				return json(
+					{
+						ok: true,
+						message: "Mensaje persistido correctamente.",
+						id_mensaje: result.meta.last_row_id,
+					},
+					{ status: 201 }
+				);
+			} catch (error) {
+				const message = error instanceof Error ? error.message : String(error);
+				const lowerMessage = message.toLowerCase();
+
+				if (lowerMessage.includes("foreign key constraint failed")) {
+					return json({ ok: false, error: "id_evento no existe." }, { status: 400 });
+				}
+
+				return json({ ok: false, error: "No se pudo persistir el mensaje." }, { status: 500 });
+			}
+		}
+
+		// GET /eventos/:id/mensajes
+		// Historial de un chat, para que la app lo cargue al entrar (el
+		// socket TCP solo entrega mensajes nuevos en tiempo real, no
+		// historial pasado).
+		const mensajesEventoMatch = url.pathname.match(/^\/eventos\/(\d+)\/mensajes$/);
+
+		if (request.method === "GET" && mensajesEventoMatch) {
+			const idEvento = Number(mensajesEventoMatch[1]);
+
+			const evento = await env.unparche_db
+				.prepare(
+					`SELECT id_evento, chat_habilitado
+					FROM evento
+					WHERE id_evento = ?
+					AND fecha_eliminacion IS NULL`
+				)
+				.bind(idEvento)
+				.first();
+
+			if (!evento) {
+				return json({ ok: false, error: "Evento no encontrado." }, { status: 404 });
+			}
+
+			const mensajes = await env.unparche_db
+				.prepare(
+					`SELECT
+						id_mensaje,
+						nickname,
+						contenido,
+						fecha_envio
+					FROM mensaje_chat
+					WHERE id_evento = ?
+					ORDER BY fecha_envio ASC
+					LIMIT 200`
+				)
+				.bind(idEvento)
+				.all();
+
+			return json({ ok: true, evento, mensajes: mensajes.results });
+		}
+
+		// POST /auth/register
+		if (request.method === "POST" && url.pathname === "/auth/register") {
+			let body: any;
+			try { body = await request.json(); } catch { return json({ ok: false, error: "JSON invalido" }, { status: 400 }); }
+			const { correo_institucional, contrasena, nombre, apellido } = body;
+
+			if (!correo_institucional || !correo_institucional.endsWith("@unal.edu.co") || !contrasena || !nombre) {
+				return json({ ok: false, error: "Datos invalidos o correo no institucional" }, { status: 400 });
+			}
+
+			try {
+				const hash = await bcrypt.hash(contrasena, 10);
+				const result = await env.unparche_db.prepare(
+					`INSERT INTO usuario (correo_institucional, contrasena_hash, nombre, apellido) VALUES (?, ?, ?, ?)`
+				).bind(correo_institucional.trim(), hash, nombre.trim(), apellido?.trim() || "").run();
+
+				const idUsuario = result.meta.last_row_id;
+				// exp: Unix timestamp de expiración (7 días desde ahora)
+				const exp = Math.floor(Date.now() / 1000) + 7 * 24 * 60 * 60;
+				const token = await jwt.sign({ id: idUsuario, correo: correo_institucional, exp }, env.JWT_SECRET || "default_secret_for_dev");
+
+				return json({ ok: true, usuario: { id_usuario: idUsuario, correo_institucional, nombre, apellido, nickname: null }, token }, { status: 201 });
+			} catch (e: any) {
+				if (e.message?.includes("UNIQUE")) {
+					return json({ ok: false, error: "El correo ya está registrado" }, { status: 409 });
+				}
+				return json({ ok: false, error: "Error interno al crear usuario" }, { status: 500 });
+			}
+		}
+
+		// POST /auth/login
+		if (request.method === "POST" && url.pathname === "/auth/login") {
+			let body: any;
+			try { body = await request.json(); } catch { return json({ ok: false, error: "JSON invalido" }, { status: 400 }); }
+			const { correo_institucional, contrasena } = body;
+			if (!correo_institucional || !contrasena) return json({ ok: false, error: "Credenciales requeridas" }, { status: 400 });
+
+			const usuario = await env.unparche_db.prepare(`SELECT id_usuario, contrasena_hash, nombre, apellido, nickname FROM usuario WHERE correo_institucional = ?`)
+				.bind(correo_institucional.trim()).first<{ id_usuario: number, contrasena_hash: string, nombre: string, apellido: string, nickname: string | null }>();
+
+			if (!usuario) return json({ ok: false, error: "Credenciales invalidas" }, { status: 401 });
+
+			const valid = await bcrypt.compare(contrasena, usuario.contrasena_hash);
+			if (!valid) return json({ ok: false, error: "Credenciales invalidas" }, { status: 401 });
+
+			// exp: Unix timestamp de expiración (7 días desde ahora)
+			const exp = Math.floor(Date.now() / 1000) + 7 * 24 * 60 * 60;
+			const token = await jwt.sign({ id: usuario.id_usuario, correo: correo_institucional, exp }, env.JWT_SECRET || "default_secret_for_dev");
+			return json({ ok: true, usuario: { id_usuario: usuario.id_usuario, correo_institucional, nombre: usuario.nombre, apellido: usuario.apellido, nickname: usuario.nickname }, token });
+		}
+
+		// GET /usuarios/me
+		if (request.method === "GET" && url.pathname === "/usuarios/me") {
+			const payload = await verifyToken(request, env as AppEnv);
+			if (!payload) return json({ ok: false, error: "No autorizado" }, { status: 401 });
+
+			const usuario = await env.unparche_db.prepare(
+				`SELECT id_usuario, correo_institucional, nombre, apellido, nickname, carrera, informacion_personal, rol, foto_perfil, fecha_creacion FROM usuario WHERE id_usuario = ?`
+			).bind(payload.id).first();
+			if (!usuario) return json({ ok: false, error: "Usuario no encontrado" }, { status: 404 });
+			return json({ ok: true, usuario });
+		}
+
+		// PATCH /usuarios/me
+		if (request.method === "PATCH" && url.pathname === "/usuarios/me") {
+			const payload = await verifyToken(request, env as AppEnv);
+			if (!payload) return json({ ok: false, error: "No autorizado" }, { status: 401 });
+
+			let body: any;
+			try { body = await request.json(); } catch { return json({ ok: false, error: "JSON invalido" }, { status: 400 }); }
+
+			const allowedUpdates = ["nombre", "apellido", "nickname", "carrera", "informacion_personal", "foto_perfil"];
+			const updates = [];
+			const values = [];
+			for (const key of allowedUpdates) {
+				if (body[key] !== undefined) {
+					updates.push(`${key} = ?`);
+					values.push(key === "nickname" && typeof body[key] === "string" && body[key].trim() === "" ? null : body[key]);
+				}
+			}
+			if (updates.length === 0) return json({ ok: false, error: "No hay datos para actualizar" }, { status: 400 });
+
+			values.push(payload.id);
+			await env.unparche_db.prepare(`UPDATE usuario SET ${updates.join(", ")} WHERE id_usuario = ?`).bind(...values).run();
+
+			const usuario = await env.unparche_db.prepare(
+				`SELECT id_usuario, correo_institucional, nombre, apellido, nickname, carrera, informacion_personal, rol, foto_perfil, fecha_creacion FROM usuario WHERE id_usuario = ?`
+			).bind(payload.id).first();
+			return json({ ok: true, usuario });
 		}
 
 
@@ -803,7 +1045,7 @@ export default {
 
 			return json({ ok: true, usuario });
 		}
-		
+
 		// GET eventos relacionados con un usuario (usuarios/:id/eventos)
 		const eventosUsuarioMatch = url.pathname.match(/^\/usuarios\/(\d+)\/eventos$/);
 
@@ -1433,7 +1675,7 @@ export default {
 				asistencia,
 			});
 		}
-	
+
 		// GET asistencias de un evento y confirmados (/eventos/:id/asistencias)
 		const asistenciasEventoMatch = url.pathname.match(/^\/eventos\/(\d+)\/asistencias$/);
 
@@ -1500,6 +1742,23 @@ export default {
 		}
 
 
+		// GET ids de todos los eventos actuales con chat habilitado
+		if (request.method === "GET" && url.pathname === "/eventos/ids-actuales") {
+			const eventosActuales = await env.unparche_db
+				.prepare(
+					`SELECT
+						id_evento
+					FROM evento
+					WHERE ${activeEventCondition}
+					AND estado IN ('PROGRAMADO', 'EN_CURSO')
+					AND chat_habilitado = 1
+					ORDER BY fecha_inicio ASC`
+				)
+				.all<{ id_evento: number }>();
+
+			return json(eventosActuales.results.map((evento) => evento.id_evento));
+		}
+
 		// GET eventos
 		if (request.method === "GET" && url.pathname === "/eventos") {
 			const idUsuarioParam = url.searchParams.get("id_usuario");
@@ -1564,7 +1823,7 @@ export default {
 
 			return json({ ok: true, eventos: eventos.results });
 		}
-		
+
 
 		// POST eventos
 		if (request.method === "POST" && url.pathname === "/eventos") {
