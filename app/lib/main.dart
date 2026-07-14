@@ -68,12 +68,7 @@ void main() {
 
   final authNotifier = AuthNotifier();
 
-  runApp(
-    AuthProvider(
-      notifier: authNotifier,
-      child: const UNparcheApp(),
-    ),
-  );
+  runApp(AuthProvider(notifier: authNotifier, child: const UNparcheApp()));
 }
 
 class UNparcheApp extends StatelessWidget {
@@ -92,7 +87,36 @@ class UNparcheApp extends StatelessWidget {
         scaffoldBackgroundColor: background,
         useMaterial3: true,
       ),
-      home: const CampusMapScreen(),
+      home: const AuthGate(),
+    );
+  }
+}
+
+class AuthGate extends StatelessWidget {
+  const AuthGate({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final authNotifier = AuthProvider.of(context);
+
+    return ValueListenableBuilder<AuthState>(
+      valueListenable: authNotifier,
+      builder: (context, authState, _) {
+        if (authState.isLoading) {
+          return const Scaffold(
+            backgroundColor: CampusMapScreen._background,
+            body: Center(
+              child: CircularProgressIndicator(color: CampusMapScreen._ink),
+            ),
+          );
+        }
+
+        if (!authState.isAuthenticated) {
+          return const LoginScreen();
+        }
+
+        return const CampusMapScreen();
+      },
     );
   }
 }
@@ -112,7 +136,7 @@ class CampusMapScreen extends StatefulWidget {
 class _CampusMapScreenState extends State<CampusMapScreen> {
   final _eventApiClient = EventApiClient();
   List<EventSummary> _allEvents = [];
-  _HomeTab _selectedTab = _HomeTab.map;
+  _HomeTab _selectedTab = _HomeTab.events;
   EventFilters _filters = const EventFilters();
   EventTimeScope _eventTimeScope = EventTimeScope.future;
   EventSummary? _focusedEvent;
@@ -136,7 +160,9 @@ class _CampusMapScreenState extends State<CampusMapScreen> {
     });
 
     try {
-      final events = await _eventApiClient.fetchEvents(viewerUserId: _demoUserId);
+      final events = await _eventApiClient.fetchEvents(
+        viewerUserId: _demoUserId,
+      );
       final sortedEvents = [...events]
         ..sort((a, b) {
           final aStart = a.start;
@@ -181,11 +207,13 @@ class _CampusMapScreenState extends State<CampusMapScreen> {
     final authState = AuthProvider.of(context).value;
     if (!authState.isAuthenticated) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Necesitas iniciar sesión para crear un evento.')),
+        const SnackBar(
+          content: Text('Necesitas iniciar sesión para crear un evento.'),
+        ),
       );
-      Navigator.of(context).push(
-        MaterialPageRoute(builder: (_) => const LoginScreen()),
-      );
+      Navigator.of(
+        context,
+      ).push(MaterialPageRoute(builder: (_) => const LoginScreen()));
       return;
     }
 
@@ -404,13 +432,17 @@ class _CampusMapScreenState extends State<CampusMapScreen> {
 
   void _replaceEvent(EventSummary updatedEvent) {
     setState(() {
-      _allEvents = _allEvents
-          .map((event) => event.id == updatedEvent.id ? updatedEvent : event)
-          .toList()
-        ..sort(
-          (a, b) =>
-              (a.start ?? DateTime(9999)).compareTo(b.start ?? DateTime(9999)),
-        );
+      _allEvents =
+          _allEvents
+              .map(
+                (event) => event.id == updatedEvent.id ? updatedEvent : event,
+              )
+              .toList()
+            ..sort(
+              (a, b) => (a.start ?? DateTime(9999)).compareTo(
+                b.start ?? DateTime(9999),
+              ),
+            );
 
       if (_focusedEvent?.id == updatedEvent.id) {
         _focusedEvent = updatedEvent;
@@ -1007,19 +1039,15 @@ class MapHeader extends StatelessWidget {
 
   /// Navega a la pantalla de perfil del usuario
   void _openProfile(BuildContext context) {
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => const ProfileScreen(),
-      ),
-    );
+    Navigator.of(
+      context,
+    ).push(MaterialPageRoute(builder: (_) => const ProfileScreen()));
   }
 
   void _openLogin(BuildContext context) {
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => const LoginScreen(),
-      ),
-    );
+    Navigator.of(
+      context,
+    ).push(MaterialPageRoute(builder: (_) => const LoginScreen()));
   }
 
   @override
@@ -1062,14 +1090,20 @@ class MapHeader extends StatelessWidget {
             TextButton(
               onPressed: () => _openLogin(context),
               style: TextButton.styleFrom(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 8,
+                ),
                 backgroundColor: CampusMapScreen._ink,
                 foregroundColor: Colors.white,
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(16),
                 ),
               ),
-              child: const Text('Iniciar sesión', style: TextStyle(fontSize: 12)),
+              child: const Text(
+                'Iniciar sesión',
+                style: TextStyle(fontSize: 12),
+              ),
             ),
           const Expanded(
             child: Center(

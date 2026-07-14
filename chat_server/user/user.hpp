@@ -37,7 +37,10 @@ private:
     void readLine();
     void handleLine(const std::string& line);
     void handleNewEvent(int id_evento);
-    void handleJoin(int id_evento, const std::string& nickname);
+    void handleJoin(
+        int id_evento,
+        const std::string& correo,
+        const std::string& nickname);
     void handleMessage(const std::string& contenido);
     void doWrite();
     void closeConnection();
@@ -48,6 +51,7 @@ private:
     std::deque<std::string> writeQueue_;
 
     std::string nickname_;
+    std::string correo_;
     bool joined_ = false;
     bool closed_ = false;
     std::size_t connectionId_;

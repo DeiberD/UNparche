@@ -3,12 +3,14 @@
 class ChatMessage {
   const ChatMessage({
     required this.idEvento,
+    required this.correo,
     required this.nickname,
     required this.contenido,
     required this.timestamp,
   });
 
   final int idEvento;
+  final String correo;
   final String nickname;
   final String contenido;
   final DateTime timestamp;
@@ -19,6 +21,7 @@ class ChatMessage {
     final timestampMs = json['timestamp_ms'] as int?;
     return ChatMessage(
       idEvento: json['id_evento'] as int,
+      correo: json['correo'] as String,
       nickname: json['nickname'] as String,
       contenido: json['contenido'] as String,
       timestamp: timestampMs != null
@@ -32,6 +35,7 @@ class ChatMessage {
   factory ChatMessage.fromApiJson(Map<String, dynamic> json, int idEvento) {
     return ChatMessage(
       idEvento: idEvento,
+      correo: json['correo'] as String? ?? '',
       nickname: json['nickname'] as String,
       contenido: json['contenido'] as String,
       timestamp: DateTime.parse(json['fecha_envio'] as String),

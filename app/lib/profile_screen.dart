@@ -23,7 +23,6 @@ class ProfileScreen extends StatefulWidget {
 }
 
 class _ProfileScreenState extends State<ProfileScreen> {
-
   /// Muestra un diálogo para editar nombre, apellido, carrera e información personal.
   /// Patrón: Dialog + async mutation a través del estado global (AuthNotifier).
   void _showEditProfileDialog(BuildContext context) {
@@ -32,8 +31,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
     final nameCtrl = TextEditingController(text: user?.nombre ?? '');
     final lastNameCtrl = TextEditingController(text: user?.apellido ?? '');
+    final nicknameCtrl = TextEditingController(text: user?.nickname ?? '');
     final carreraCtrl = TextEditingController(text: user?.carrera ?? '');
-    final infoCtrl = TextEditingController(text: user?.informacionPersonal ?? '');
+    final infoCtrl = TextEditingController(
+      text: user?.informacionPersonal ?? '',
+    );
     final formKey = GlobalKey<FormState>();
 
     showDialog(
@@ -48,23 +50,44 @@ class _ProfileScreenState extends State<ProfileScreen> {
               children: [
                 TextFormField(
                   controller: nameCtrl,
-                  decoration: const InputDecoration(labelText: 'Nombre', border: OutlineInputBorder()),
-                  validator: (v) => (v == null || v.isEmpty) ? 'Requerido' : null,
+                  decoration: const InputDecoration(
+                    labelText: 'Nombre',
+                    border: OutlineInputBorder(),
+                  ),
+                  validator: (v) =>
+                      (v == null || v.isEmpty) ? 'Requerido' : null,
                 ),
                 const SizedBox(height: 12),
                 TextFormField(
                   controller: lastNameCtrl,
-                  decoration: const InputDecoration(labelText: 'Apellido', border: OutlineInputBorder()),
+                  decoration: const InputDecoration(
+                    labelText: 'Apellido',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextFormField(
+                  controller: nicknameCtrl,
+                  decoration: const InputDecoration(
+                    labelText: 'Nickname',
+                    border: OutlineInputBorder(),
+                  ),
                 ),
                 const SizedBox(height: 12),
                 TextFormField(
                   controller: carreraCtrl,
-                  decoration: const InputDecoration(labelText: 'Carrera', border: OutlineInputBorder()),
+                  decoration: const InputDecoration(
+                    labelText: 'Carrera',
+                    border: OutlineInputBorder(),
+                  ),
                 ),
                 const SizedBox(height: 12),
                 TextFormField(
                   controller: infoCtrl,
-                  decoration: const InputDecoration(labelText: 'Información personal', border: OutlineInputBorder()),
+                  decoration: const InputDecoration(
+                    labelText: 'Información personal',
+                    border: OutlineInputBorder(),
+                  ),
                   maxLines: 2,
                 ),
               ],
@@ -88,6 +111,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 await authNotifier.updateProfile({
                   'nombre': nameCtrl.text.trim(),
                   'apellido': lastNameCtrl.text.trim(),
+                  'nickname': nicknameCtrl.text.trim().isEmpty
+                      ? null
+                      : nicknameCtrl.text.trim(),
                   'carrera': carreraCtrl.text.trim(),
                   'informacion_personal': infoCtrl.text.trim(),
                 });
@@ -99,7 +125,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
               } catch (e) {
                 if (context.mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('Error: ${e.toString().replaceAll("Exception: ", "")}')),
+                    SnackBar(
+                      content: Text(
+                        'Error: ${e.toString().replaceAll("Exception: ", "")}',
+                      ),
+                    ),
                   );
                 }
               }
@@ -174,7 +204,10 @@ class _ProfileHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     final authState = AuthProvider.of(context).value;
     final user = authState.currentUser;
-    final fullName = user != null ? '${user.nombre} ${user.apellido}' : 'Cargando...';
+    final fullName = user != null
+        ? '${user.nombre} ${user.apellido}'
+        : 'Cargando...';
+    final nickname = user?.nickname;
     final email = user?.correoInstitucional ?? '';
     final carrera = user?.carrera ?? '';
     final info = user?.informacionPersonal ?? 'Agrega información personal.';
@@ -226,11 +259,7 @@ class _ProfileHeader extends StatelessWidget {
                     width: 3,
                   ),
                 ),
-                child: const Icon(
-                  Icons.edit,
-                  size: 18,
-                  color: Colors.white,
-                ),
+                child: const Icon(Icons.edit, size: 18, color: Colors.white),
               ),
             ),
           ],
@@ -247,6 +276,19 @@ class _ProfileHeader extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 8),
+
+        if (nickname != null && nickname.trim().isNotEmpty) ...[
+          Text(
+            '@${nickname.trim()}',
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              color: ProfileScreen._ink,
+              fontSize: 15,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(height: 8),
+        ],
 
         // User biography
         Text(
@@ -297,20 +339,14 @@ class _EditProfileButton extends StatelessWidget {
         onPressed: onPressed,
         style: OutlinedButton.styleFrom(
           foregroundColor: ProfileScreen._ink,
-          side: BorderSide(
-            color: ProfileScreen._ink.withAlpha(100),
-            width: 2,
-          ),
+          side: BorderSide(color: ProfileScreen._ink.withAlpha(100), width: 2),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(24),
           ),
         ),
         child: const Text(
           'Edit Profile',
-          style: TextStyle(
-            fontWeight: FontWeight.w800,
-            fontSize: 15,
-          ),
+          style: TextStyle(fontWeight: FontWeight.w800, fontSize: 15),
         ),
       ),
     );
@@ -412,9 +448,7 @@ class _GroupsList extends StatelessWidget {
           ),
 
           // Groups list
-          ...groups.map(
-            (group) => _GroupTile(group: group),
-          ),
+          ...groups.map((group) => _GroupTile(group: group)),
         ],
       ),
     );
@@ -451,9 +485,9 @@ class _GroupTile extends StatelessWidget {
       child: InkWell(
         onTap: () {
           // TODO: Navigate to group details
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Abriendo ${group.name}')),
-          );
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(SnackBar(content: Text('Abriendo ${group.name}')));
         },
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
@@ -577,9 +611,9 @@ class _EventTile extends StatelessWidget {
         borderRadius: BorderRadius.circular(18),
         onTap: () {
           // TODO: Navigate to event details
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Abriendo ${event.title}')),
-          );
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(SnackBar(content: Text('Abriendo ${event.title}')));
         },
         child: Container(
           padding: const EdgeInsets.all(14),
@@ -603,9 +637,7 @@ class _EventTile extends StatelessWidget {
                 decoration: BoxDecoration(
                   color: ProfileScreen._surface,
                   borderRadius: BorderRadius.circular(14),
-                  border: Border.all(
-                    color: ProfileScreen._ink.withAlpha(20),
-                  ),
+                  border: Border.all(color: ProfileScreen._ink.withAlpha(20)),
                 ),
                 child: Icon(
                   event.imageIcon,

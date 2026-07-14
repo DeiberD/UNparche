@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import 'event_api_client.dart';
+import 'auth_state.dart';
 import 'flutter_chat/chat_message.dart';
 import 'flutter_chat/chat_socket_client.dart';
 
@@ -1129,8 +1130,6 @@ class EventChatScreen extends StatefulWidget {
 }
 
 class _EventChatScreenState extends State<EventChatScreen> {
-  static const _nickname = 'usuario';
-
   final _messageController = TextEditingController();
   final _scrollController = ScrollController();
   final List<ChatMessage> _messages = [];
@@ -1140,11 +1139,22 @@ class _EventChatScreenState extends State<EventChatScreen> {
   StreamSubscription<void>? _joinedSubscription;
   String? _statusMessage = 'Conectando al chat...';
   bool _isJoined = false;
+  String _correo = '';
+  String _nickname = ' ';
+  bool _didStartConnection = false;
 
   @override
-  void initState() {
-    super.initState();
-    _connectToChat();
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_didStartConnection) {
+      return;
+    }
+
+    _didStartConnection = true;
+    final user = AuthProvider.of(context).value.currentUser;
+    _correo = user?.correoInstitucional ?? '';
+    _nickname = user?.chatNickname ?? ' ';
+    unawaited(_connectToChat());
   }
 
   Future<void> _connectToChat() async {
@@ -1186,7 +1196,11 @@ class _EventChatScreenState extends State<EventChatScreen> {
     });
 
     try {
-      await client.connectAndJoin(idEvento: eventId, nickname: _nickname);
+      await client.connectAndJoin(
+        idEvento: eventId,
+        correo: _correo,
+        nickname: _nickname,
+      );
       if (!mounted) {
         await client.dispose();
         return;
@@ -1281,7 +1295,7 @@ class _EventChatScreenState extends State<EventChatScreen> {
                         final message = _messages[index];
                         return _ChatBubble(
                           message: message,
-                          isMine: message.nickname == _nickname,
+                          isMine: message.correo == _correo,
                         );
                       },
                     ),

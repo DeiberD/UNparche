@@ -135,16 +135,24 @@ void User::handleLine(const std::string& line) {
         }
 
         auto idEventoIt = obj.if_contains("id_evento");
+        auto correoIt = obj.if_contains("correo");
         auto nicknameIt = obj.if_contains("nickname");
 
         if (!idEventoIt || !idEventoIt->is_number() ||
+            !correoIt || !correoIt->is_string() ||
             !nicknameIt || !nicknameIt->is_string()) {
-            logError("join_invalid", "falta id_evento o nickname");
+            logError("join_invalid", "falta id_evento, correo o nickname");
             return;
         }
 
         const int idEvento = static_cast<int>(idEventoIt->to_number<int64_t>());
+        const std::string correo = correoIt->as_string().c_str();
         const std::string nickname = nicknameIt->as_string().c_str();
+
+        if (correo.empty()) {
+            logError("join_invalid", "correo vacio");
+            return;
+        }
 
         if (nickname.empty()) {
             logError("join_invalid", "nickname vacio");
@@ -153,8 +161,10 @@ void User::handleLine(const std::string& line) {
 
         logInfo(
             "join_attempt",
-            "id_evento=" + std::to_string(idEvento) + " nickname=" + nickname);
-        handleJoin(idEvento, nickname);
+            "id_evento=" + std::to_string(idEvento) +
+                " correo=" + correo +
+                " nickname=" + nickname);
+        handleJoin(idEvento, correo, nickname);
         return;
     }
 
@@ -191,7 +201,10 @@ void User::handleNewEvent(int id_evento) {
             (created ? " sala creada" : " sala ya existia o id invalido"));
 }
 
-void User::handleJoin(int id_evento, const std::string& nickname) {
+void User::handleJoin(
+    int id_evento,
+    const std::string& correo,
+    const std::string& nickname) {
     chat_ = registry_.getChat(id_evento);
     if (!chat_) {
         logError(
@@ -205,13 +218,16 @@ void User::handleJoin(int id_evento, const std::string& nickname) {
         return;
     }
 
+    correo_ = correo;
     nickname_ = nickname;
     joined_ = true;
 
     chat_->addUser(shared_from_this());
     logInfo(
         "join_ok",
-        "id_evento=" + std::to_string(id_evento) + " nickname=" + nickname_);
+        "id_evento=" + std::to_string(id_evento) +
+            " correo=" + correo_ +
+            " nickname=" + nickname_);
 
     // Enviar historial almacenado en memoria al usuario que recien se unio
     chat_->loadChat(shared_from_this());
@@ -220,6 +236,7 @@ void User::handleJoin(int id_evento, const std::string& nickname) {
     json::object ack;
     ack["type"] = "joined";
     ack["id_evento"] = id_evento;
+    ack["correo"] = correo_;
     ack["nickname"] = nickname_;
     deliver(json::serialize(ack));
 }
@@ -231,8 +248,10 @@ void User::handleMessage(const std::string& contenido) {
     }
     logInfo(
         "message",
-        "nickname=" + nickname_ + " contenido=\"" + truncateForLog(contenido) + "\"");
-    chat_->receiveMessage(nickname_, contenido);
+        "correo=" + correo_ +
+            " nickname=" + nickname_ +
+            " contenido=\"" + truncateForLog(contenido) + "\"");
+    chat_->receiveMessage(correo_, nickname_, contenido);
 }
 
 void User::deliver(const std::string& jsonLine) {

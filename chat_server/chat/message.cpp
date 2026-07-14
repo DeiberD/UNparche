@@ -7,6 +7,7 @@ std::string Message::toJsonLine() const {
     json::object obj;
     obj["type"] = "message";
     obj["id_evento"] = id_evento;
+    obj["correo"] = correo;
     obj["nickname"] = nickname;
     obj["contenido"] = contenido;
     obj["timestamp_ms"] = timestamp_ms;
