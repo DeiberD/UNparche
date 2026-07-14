@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'event_api_client.dart';
+import 'flutter_chat/chat_socket_client.dart';
 import 'location_picker_screen.dart';
 
 /// Event creation screen.
@@ -220,6 +221,20 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
       final eventId = createdEvent is Map<String, dynamic>
           ? createdEvent['id_evento'] as int?
           : null;
+
+      if (_chatEnabled && eventId != null) {
+        try {
+          await ChatSocketClient.announceNewEvent(idEvento: eventId);
+        } on ChatSocketException catch (error) {
+          debugPrint(
+            '[Chat] No se pudo crear sala para evento $eventId: $error',
+          );
+        }
+      }
+
+      if (!mounted) {
+        return;
+      }
 
       // Return the published event so the home screen can display it immediately.
       Navigator.of(context).pop(

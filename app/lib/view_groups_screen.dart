@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
 import 'group_api_client.dart';
+import 'auth_state.dart';
+import 'login_screen.dart';
 
 class GroupsScreen extends StatefulWidget {
   const GroupsScreen({super.key, this.groupApiClient});
@@ -103,6 +105,17 @@ class _GroupsScreenState extends State<GroupsScreen> {
       _categoryFilter != null;
 
   Future<void> _openCreateGroup() async {
+    final authState = AuthProvider.of(context).value;
+    if (!authState.isAuthenticated) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Necesitas iniciar sesión para crear un grupo.')),
+      );
+      Navigator.of(context).push(
+        MaterialPageRoute(builder: (_) => const LoginScreen()),
+      );
+      return;
+    }
+
     final createdGroup = await Navigator.of(context).push<GroupSummary>(
       MaterialPageRoute(
         builder: (_) => CreateGroupScreen(groupApiClient: _groupApiClient),
