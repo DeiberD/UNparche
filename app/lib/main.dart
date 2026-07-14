@@ -6,6 +6,8 @@ import 'event_api_client.dart';
 import 'profile_screen.dart';
 import 'view_events_screen.dart';
 import 'view_groups_screen.dart';
+import 'auth_state.dart';
+import 'login_screen.dart';
 
 const _mapboxAccessToken = String.fromEnvironment('ACCESS_TOKEN');
 const _demoUserId = 1;
@@ -61,7 +63,14 @@ void main() {
     MapboxOptions.setAccessToken(_mapboxAccessToken);
   }
 
-  runApp(const UNparcheApp());
+  final authNotifier = AuthNotifier();
+
+  runApp(
+    AuthProvider(
+      notifier: authNotifier,
+      child: const UNparcheApp(),
+    ),
+  );
 }
 
 class UNparcheApp extends StatelessWidget {
@@ -166,6 +175,17 @@ class _CampusMapScreenState extends State<CampusMapScreen> {
   }
 
   Future<void> _openCreateEvent(BuildContext context) async {
+    final authState = AuthProvider.of(context).value;
+    if (!authState.isAuthenticated) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Necesitas iniciar sesión para crear un evento.')),
+      );
+      Navigator.of(context).push(
+        MaterialPageRoute(builder: (_) => const LoginScreen()),
+      );
+      return;
+    }
+
     final messenger = ScaffoldMessenger.of(context);
     final event = await Navigator.of(context).push<CreatedEventDraft>(
       MaterialPageRoute(builder: (_) => const CreateEventScreen()),
@@ -788,8 +808,18 @@ class MapHeader extends StatelessWidget {
     );
   }
 
+  void _openLogin(BuildContext context) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => const LoginScreen(),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    final authState = AuthProvider.of(context).value;
+
     return Container(
       height: 58,
       decoration: BoxDecoration(
@@ -806,16 +836,35 @@ class MapHeader extends StatelessWidget {
       child: Row(
         children: [
           const SizedBox(width: 12),
-          // Avatar del usuario con funcionalidad de tap para abrir perfil
-          InkWell(
-            onTap: () => _openProfile(context),
-            borderRadius: BorderRadius.circular(17),
-            child: CircleAvatar(
-              radius: 17,
-              backgroundColor: CampusMapScreen._accent,
-              child: Icon(Icons.person, color: CampusMapScreen._ink, size: 20),
+          // Avatar del usuario o botón de Iniciar Sesión
+          if (authState.isAuthenticated)
+            InkWell(
+              onTap: () => _openProfile(context),
+              borderRadius: BorderRadius.circular(17),
+              child: CircleAvatar(
+                radius: 17,
+                backgroundColor: CampusMapScreen._accent,
+                backgroundImage: authState.currentUser?.fotoPerfil != null
+                    ? NetworkImage(authState.currentUser!.fotoPerfil!)
+                    : null,
+                child: authState.currentUser?.fotoPerfil == null
+                    ? Icon(Icons.person, color: CampusMapScreen._ink, size: 20)
+                    : null,
+              ),
+            )
+          else
+            TextButton(
+              onPressed: () => _openLogin(context),
+              style: TextButton.styleFrom(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                backgroundColor: CampusMapScreen._ink,
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                ),
+              ),
+              child: const Text('Iniciar sesión', style: TextStyle(fontSize: 12)),
             ),
-          ),
           const Expanded(
             child: Center(
               child: Text(
