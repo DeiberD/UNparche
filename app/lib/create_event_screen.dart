@@ -1,11 +1,17 @@
 import 'package:flutter/material.dart';
 
 import 'event_api_client.dart';
+import 'flutter_chat/chat_socket_client.dart';
 import 'location_picker_screen.dart';
 
+/// Event creation screen.
+///
+/// Collects the event information, validates the publication rules, lets the
+/// organizer choose a point on the campus map and sends the request to the API.
 class CreateEventScreen extends StatefulWidget {
   const CreateEventScreen({super.key, this.eventApiClient});
 
+  // Optional dependency injection keeps the screen testable without a real API.
   final EventApiClient? eventApiClient;
 
   @override
@@ -13,6 +19,7 @@ class CreateEventScreen extends StatefulWidget {
 }
 
 class _CreateEventScreenState extends State<CreateEventScreen> {
+  // Colors consistent with the rest of the application.
   static const _background = Color(0xFFFBF5F2);
   static const _surface = Color(0xFFF3ECE8);
   static const _ink = Color(0xFF263020);
@@ -26,6 +33,8 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
     'Otro',
   ];
   static const _visibilityOptions = ['Publica', 'Solo grupo', 'Solo amigos'];
+
+  // Maps user-facing labels to the identifiers expected by the backend.
   static const _eventTypeIds = {
     'Academico': 1,
     'Cultural': 2,
@@ -39,6 +48,7 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
     'Solo amigos': 'SOLO_AMIGOS',
   };
 
+  // Controllers own the editable text until the form is submitted or closed.
   final _formKey = GlobalKey<FormState>();
   final _titleController = TextEditingController();
   final _descriptionController = TextEditingController();
@@ -64,6 +74,8 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
 
   Future<void> _pickDate() async {
     final now = DateTime.now();
+
+    // HU-27 only allows events to be announced up to seven days ahead.
     final pickedDate = await showDatePicker(
       context: context,
       initialDate: _selectedDate ?? now,
@@ -88,6 +100,7 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
   }
 
   DateTime? get _selectedDateTime {
+    // Date and time are selected independently in the UI but sent as one value.
     final date = _selectedDate;
     final time = _selectedTime;
     if (date == null || time == null) {
@@ -117,6 +130,7 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
   }
 
   Future<void> _pickLocation() async {
+    // The picker returns both the display label and the coordinates for the API.
     final location = await Navigator.of(context).push<LocationSelection>(
       MaterialPageRoute(
         builder: (_) =>
@@ -135,6 +149,7 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
   }
 
   Future<void> _publishEvent() async {
+    // Prevent duplicate requests while the first publication is in progress.
     if (_isPublishing) {
       return;
     }
@@ -169,6 +184,8 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
 
     final duration = int.parse(_durationController.text.trim());
     final end = start.add(Duration(minutes: duration));
+
+    // HU-36 removes the event from active views 24 hours after it finishes.
     final deletionDate = end.add(const Duration(hours: 24));
     final eventTypeId = _eventTypeIds[_selectedType]!;
     final visibility = _visibilityApiValues[_selectedVisibility]!;
@@ -177,6 +194,8 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
 
     try {
       final apiClient = widget.eventApiClient ?? EventApiClient();
+
+      // Builder keeps construction readable and rejects incomplete requests.
       final request =
           (CreateEventRequestBuilder()
                 ..withTitle(_titleController.text.trim())
@@ -203,6 +222,21 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
           ? createdEvent['id_evento'] as int?
           : null;
 
+      if (_chatEnabled && eventId != null) {
+        try {
+          await ChatSocketClient.announceNewEvent(idEvento: eventId);
+        } on ChatSocketException catch (error) {
+          debugPrint(
+            '[Chat] No se pudo crear sala para evento $eventId: $error',
+          );
+        }
+      }
+
+      if (!mounted) {
+        return;
+      }
+
+      // Return the published event so the home screen can display it immediately.
       Navigator.of(context).pop(
         CreatedEventDraft(
           id: eventId,
@@ -236,6 +270,7 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
         'No se pudo conectar con la API. Revisa que el backend este corriendo.',
       );
     } finally {
+      // Restore the button even when validation by the API fails.
       if (mounted) {
         setState(() => _isPublishing = false);
       }
@@ -266,6 +301,7 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
           child: ListView(
             padding: const EdgeInsets.fromLTRB(18, 12, 18, 24),
             children: [
+              // Event identity and description.
               _CoverPhotoPlaceholder(ink: _ink, surface: _surface),
               const SizedBox(height: 18),
               TextFormField(
@@ -300,6 +336,7 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
                 },
               ),
               const SizedBox(height: 12),
+              // Schedule fields.
               Row(
                 children: [
                   Expanded(
@@ -339,6 +376,7 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
                 },
               ),
               const SizedBox(height: 16),
+              // Campus location selected through Mapbox.
               TextFormField(
                 controller: _locationController,
                 readOnly: true,
@@ -357,6 +395,7 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
                 },
               ),
               const SizedBox(height: 18),
+              // Classification used by filters and map marker colors.
               const _SectionLabel('Tipo de evento'),
               const SizedBox(height: 8),
               Wrap(
@@ -376,6 +415,7 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
                 }).toList(),
               ),
               const SizedBox(height: 22),
+              // Audience and optional event chat.
               const _SectionLabel('Visibilidad'),
               const SizedBox(height: 8),
               Wrap(
@@ -453,6 +493,9 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
   }
 }
 
+/// Local representation returned to the previous screen after publication.
+///
+/// It avoids a second API request while the event list is being refreshed.
 class CreatedEventDraft {
   const CreatedEventDraft({
     this.id,
@@ -496,6 +539,7 @@ class CreatedEventDraft {
   }
 }
 
+/// Placeholder for the future event cover upload control.
 class _CoverPhotoPlaceholder extends StatelessWidget {
   const _CoverPhotoPlaceholder({required this.ink, required this.surface});
 
@@ -528,6 +572,7 @@ class _CoverPhotoPlaceholder extends StatelessWidget {
   }
 }
 
+/// Reusable button for date and time selection.
 class _PickerButton extends StatelessWidget {
   const _PickerButton({
     required this.icon,
@@ -554,6 +599,7 @@ class _PickerButton extends StatelessWidget {
   }
 }
 
+/// Consistent heading for option groups inside the form.
 class _SectionLabel extends StatelessWidget {
   const _SectionLabel(this.label);
 

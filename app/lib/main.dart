@@ -1,8 +1,11 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart';
 
 import 'create_event_screen.dart';
 import 'event_api_client.dart';
+import 'event_cluster_data.dart';
 import 'profile_screen.dart';
 import 'view_events_screen.dart';
 import 'view_groups_screen.dart';
@@ -219,6 +222,7 @@ class _CampusMapScreenState extends State<CampusMapScreen> {
       eventTypeId: event.eventTypeId,
       eventTypeName: null,
       status: 'PROGRAMADO',
+      chatEnabled: event.chatEnabled,
       attendanceStatus: null,
     );
     setState(() {
@@ -545,11 +549,13 @@ class UNALMap extends StatefulWidget {
 
 class _UNALMapState extends State<UNALMap> {
   MapboxMap? _mapboxMap;
-  CircleAnnotationManager? _eventMarkerManager;
-  final Map<String, EventSummary> _eventsByAnnotationId = {};
-  dynamic _eventMarkerTapSubscription;
+  final Map<String, EventSummary> _eventsByFeatureKey = {};
+  bool _eventLayersReady = false;
   String? _statusMessage = 'Cargando mapa...';
   bool _hasError = false;
+
+  static const _clusterTapInteractionId = 'event-cluster-tap';
+  static const _eventTapInteractionId = 'unclustered-event-tap';
 
   static final _campusBounds = CoordinateBounds(
     // Approximate UNAL Bogota campus box. We can tighten it later with exact GIS data.
@@ -570,17 +576,26 @@ class _UNALMapState extends State<UNALMap> {
       ),
     );
 
-    _eventMarkerManager = await mapboxMap.annotations
-        .createCircleAnnotationManager();
-    _eventMarkerTapSubscription = _eventMarkerManager?.tapEvents(
-      onTap: _handleMarkerTap,
+    mapboxMap.addInteraction(
+      TapInteraction(
+        FeaturesetDescriptor(layerId: eventClustersLayerId),
+        (feature, context) => _handleClusterTap(feature, context),
+      ),
+      interactionID: _clusterTapInteractionId,
     );
-    await _syncEventMarkers();
+    mapboxMap.addInteraction(
+      TapInteraction(
+        FeaturesetDescriptor(layerId: unclusteredEventsLayerId),
+        (feature, _) => _handleEventTap(feature.properties),
+      ),
+      interactionID: _eventTapInteractionId,
+    );
   }
 
   @override
   void dispose() {
-    _eventMarkerTapSubscription?.cancel();
+    _mapboxMap?.removeInteraction(_clusterTapInteractionId);
+    _mapboxMap?.removeInteraction(_eventTapInteractionId);
     super.dispose();
   }
 
@@ -595,31 +610,23 @@ class _UNALMapState extends State<UNALMap> {
   }
 
   Future<void> _syncEventMarkers() async {
-    final manager = _eventMarkerManager;
-    if (manager == null) {
+    final mapboxMap = _mapboxMap;
+    if (mapboxMap == null || !_eventLayersReady) {
       return;
     }
 
-    await manager.deleteAll();
-    _eventsByAnnotationId.clear();
-    for (final event in widget.events) {
-      final latitude = event.latitude;
-      final longitude = event.longitude;
-      if (latitude == null || longitude == null) {
-        continue;
+    _eventsByFeatureKey.clear();
+    for (var index = 0; index < widget.events.length; index++) {
+      final event = widget.events[index];
+      if (event.hasLocation) {
+        _eventsByFeatureKey[eventClusterKey(event, index)] = event;
       }
-
-      final annotation = await manager.create(
-        CircleAnnotationOptions(
-          geometry: Point(coordinates: Position(longitude, latitude)),
-          circleRadius: 8,
-          circleColor: _eventColor(event.eventTypeId).toARGB32(),
-          circleStrokeColor: Colors.white.toARGB32(),
-          circleStrokeWidth: 3,
-        ),
-      );
-      _eventsByAnnotationId[annotation.id] = event;
     }
+
+    final source = await mapboxMap.style.getSource(eventClusterSourceId);
+    await (source as GeoJsonSource).updateGeoJSON(
+      jsonEncode(buildEventClusterFeatureCollection(widget.events)),
+    );
 
     final latest = widget.focusedEvent ?? widget.events.lastOrNull;
     if (latest != null && latest.latitude != null && latest.longitude != null) {
@@ -634,22 +641,149 @@ class _UNALMapState extends State<UNALMap> {
     }
   }
 
-  void _handleMarkerTap(CircleAnnotation annotation) {
-    final event = _eventsByAnnotationId[annotation.id];
+  Future<void> _setupEventLayers() async {
+    final mapboxMap = _mapboxMap;
+    if (mapboxMap == null) {
+      return;
+    }
+
+    await mapboxMap.style.addSource(
+      GeoJsonSource(
+        id: eventClusterSourceId,
+        data: jsonEncode(buildEventClusterFeatureCollection(widget.events)),
+        cluster: true,
+        clusterRadius: eventClusterRadius,
+        clusterMaxZoom: eventClusterMaxZoom,
+        clusterMinPoints: 2,
+      ),
+    );
+    await mapboxMap.style.addLayer(
+      CircleLayer(
+        id: eventClustersLayerId,
+        sourceId: eventClusterSourceId,
+        filter: const ['has', 'point_count'],
+        circleColor: CampusMapScreen._ink.toARGB32(),
+        circleRadiusExpression: const [
+          'step',
+          ['get', 'point_count'],
+          18.0,
+          10,
+          23.0,
+          25,
+          28.0,
+        ],
+        circleStrokeColor: Colors.white.toARGB32(),
+        circleStrokeWidth: 3,
+      ),
+    );
+    await mapboxMap.style.addLayer(
+      SymbolLayer(
+        id: eventClusterCountLayerId,
+        sourceId: eventClusterSourceId,
+        filter: const ['has', 'point_count'],
+        textFieldExpression: const ['get', 'point_count_abbreviated'],
+        textSize: 13,
+        textColor: Colors.white.toARGB32(),
+        textAllowOverlap: true,
+      ),
+    );
+    await mapboxMap.style.addLayer(
+      CircleLayer(
+        id: unclusteredEventsLayerId,
+        sourceId: eventClusterSourceId,
+        filter: const [
+          '!',
+          ['has', 'point_count'],
+        ],
+        circleColorExpression: const [
+          'match',
+          ['get', 'event_type_id'],
+          1,
+          '#4267B2',
+          2,
+          '#8B4C9D',
+          3,
+          '#2E7D32',
+          4,
+          '#C2410C',
+          '#263020',
+        ],
+        circleRadius: 8,
+        circleStrokeColor: Colors.white.toARGB32(),
+        circleStrokeWidth: 3,
+      ),
+    );
+
+    _eventLayersReady = true;
+    await _syncEventMarkers();
+  }
+
+  void _handleEventTap(Map<String, Object?> properties) {
+    final event = _eventsByFeatureKey[properties['event_key']?.toString()];
     if (event != null) {
       widget.onEventTap(event);
     }
   }
 
-  Color _eventColor(int? eventTypeId) {
-    return switch (eventTypeId) {
-      1 => const Color(0xFF4267B2),
-      2 => const Color(0xFF8B4C9D),
-      3 => const Color(0xFF2E7D32),
-      4 => const Color(0xFFC2410C),
-      5 => CampusMapScreen._ink,
-      _ => CampusMapScreen._ink,
+  Future<void> _handleClusterTap(
+    FeaturesetFeature feature,
+    MapContentGestureContext context,
+  ) async {
+    final mapboxMap = _mapboxMap;
+    if (mapboxMap == null) {
+      return;
+    }
+
+    final clusterFeature = <String?, Object?>{
+      'type': 'Feature',
+      'id': feature.id?.id,
+      'geometry': feature.geometry,
+      'properties': feature.properties,
     };
+
+    final leaves = await mapboxMap.getGeoJsonClusterLeaves(
+      eventClusterSourceId,
+      clusterFeature,
+      feature.properties['point_count'] as int?,
+      0,
+    );
+    final events = <EventSummary>[];
+    for (final leaf in leaves.featureCollection ?? const []) {
+      final properties = leaf?['properties'];
+      if (properties is! Map) {
+        continue;
+      }
+      final event = _eventsByFeatureKey[properties['event_key']?.toString()];
+      if (event != null) {
+        events.add(event);
+      }
+    }
+
+    final expansion = await mapboxMap.getGeoJsonClusterExpansionZoom(
+      eventClusterSourceId,
+      clusterFeature,
+    );
+    final expansionZoom = double.tryParse(expansion.value ?? '');
+    if (expansionZoom != null) {
+      await mapboxMap.easeTo(
+        CameraOptions(center: context.point, zoom: expansionZoom),
+        MapAnimationOptions(duration: 450),
+      );
+    }
+
+    if (!mounted || events.isEmpty) {
+      return;
+    }
+
+    final selected = await showModalBottomSheet<EventSummary>(
+      context: this.context,
+      backgroundColor: CampusMapScreen._background,
+      showDragHandle: true,
+      builder: (_) => _EventClusterSheet(events: events),
+    );
+    if (selected != null) {
+      widget.onEventTap(selected);
+    }
   }
 
   @override
@@ -664,11 +798,23 @@ class _UNALMapState extends State<UNALMap> {
             zoom: 15.6,
           ),
           onMapCreated: _onMapCreated,
-          onStyleLoadedListener: (_) {
-            setState(() {
-              _statusMessage = null;
-              _hasError = false;
-            });
+          onStyleLoadedListener: (_) async {
+            try {
+              await _setupEventLayers();
+              if (mounted) {
+                setState(() {
+                  _statusMessage = null;
+                  _hasError = false;
+                });
+              }
+            } catch (_) {
+              if (mounted) {
+                setState(() {
+                  _statusMessage = 'No se pudieron mostrar los eventos.';
+                  _hasError = true;
+                });
+              }
+            }
           },
           onMapLoadErrorListener: (error) {
             setState(() {
@@ -688,6 +834,66 @@ class _UNALMapState extends State<UNALMap> {
             ),
           ),
       ],
+    );
+  }
+}
+
+class _EventClusterSheet extends StatelessWidget {
+  const _EventClusterSheet({required this.events});
+
+  final List<EventSummary> events;
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      child: ConstrainedBox(
+        constraints: BoxConstraints(
+          maxHeight: MediaQuery.sizeOf(context).height * 0.58,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 4, 20, 12),
+              child: Text(
+                '${events.length} eventos en esta zona',
+                style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                  color: CampusMapScreen._ink,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+            Flexible(
+              child: ListView.separated(
+                shrinkWrap: true,
+                padding: const EdgeInsets.fromLTRB(12, 0, 12, 16),
+                itemCount: events.length,
+                separatorBuilder: (_, _) => const Divider(height: 1),
+                itemBuilder: (context, index) {
+                  final event = events[index];
+                  return ListTile(
+                    leading: const Icon(
+                      Icons.location_on_outlined,
+                      color: CampusMapScreen._ink,
+                    ),
+                    title: Text(
+                      event.title.trim().isEmpty
+                          ? 'Evento sin titulo'
+                          : event.title,
+                    ),
+                    subtitle: Text(
+                      '${event.eventTypeLabel} · ${formatEventStart(event.start)}',
+                    ),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: () => Navigator.of(context).pop(event),
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
