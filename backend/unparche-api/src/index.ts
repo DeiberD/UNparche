@@ -3,6 +3,7 @@ import jwt from "@tsndr/cloudflare-worker-jwt";
 
 type AppEnv = Env & {
 	unparche_db: D1Database;
+	CHAT_INTERNAL_TOKEN?: string;
 	JWT_SECRET: string;
 };
 
@@ -55,6 +56,13 @@ type ActualizarEventoBody = {
 	id_grupo?: number | null;
 	chat_habilitado?: boolean;
 	estado?: "PROGRAMADO" | "CANCELADO" | "FINALIZADO";
+};
+
+type CrearMensajeChatBody = {
+	id_evento?: number;
+	nickname?: string;
+	contenido?: string;
+	timestamp_ms?: number;
 };
 
 const EVENT_RETENTION_HOURS = 24;
@@ -267,6 +275,129 @@ export default {
 
 		if (request.method === "GET" && url.pathname === "/") {
 			return json({ ok: true, message: "UNparche API" });
+		}
+
+		// POST /internal/mensajes
+		// Llamado exclusivamente por el chat server en C++ (boost::asio),
+		// de forma fire-and-forget cada vez que llega un mensaje nuevo a
+		// una sala de chat. Persiste el mensaje en mensaje_chat para que
+		// quede historial, tal como pide RN-19 / HU-20. No hay auth de
+		// usuarios todavia, asi que el remitente se identifica solo por
+		// nickname (string libre elegido en el cliente Flutter).
+		if (request.method === "POST" && url.pathname === "/internal/mensajes") {
+			const internalToken = env.CHAT_INTERNAL_TOKEN;
+
+			if (internalToken) {
+				const receivedToken = request.headers.get("X-Internal-Token");
+
+				if (receivedToken !== internalToken) {
+					return json({ ok: false, error: "Token interno invalido." }, { status: 401 });
+				}
+			}
+
+			let body: CrearMensajeChatBody;
+
+			try {
+				body = await request.json();
+			} catch {
+				return json({ ok: false, error: "El body debe ser JSON valido." }, { status: 400 });
+			}
+
+			const idEvento = toInteger(body.id_evento);
+			const nickname = typeof body.nickname === "string" ? body.nickname.trim() : "";
+			const contenido = typeof body.contenido === "string" ? body.contenido.trim() : "";
+
+			if (idEvento === null || !nickname || !contenido) {
+				return json(
+					{
+						ok: false,
+						error: "id_evento, nickname y contenido son obligatorios y deben tener formato valido.",
+					},
+					{ status: 400 }
+				);
+			}
+
+			// contenido esta acotado a VARCHAR(300) en el schema MySQL; se
+			// recorta defensivamente para evitar fallos de insercion si
+			// llega algo mas largo (el chat server no valida longitud).
+			const contenidoRecortado = contenido.slice(0, 300);
+
+			const fechaEnvio = typeof body.timestamp_ms === "number" && Number.isFinite(body.timestamp_ms)
+				? new Date(body.timestamp_ms).toISOString()
+				: new Date().toISOString();
+
+			try {
+				const result = await env.unparche_db
+					.prepare(
+						`INSERT INTO mensaje_chat (
+							contenido,
+							nickname,
+							fecha_envio,
+							id_evento
+						) VALUES (?, ?, ?, ?)`
+					)
+					.bind(contenidoRecortado, nickname, fechaEnvio, idEvento)
+					.run();
+
+				return json(
+					{
+						ok: true,
+						message: "Mensaje persistido correctamente.",
+						id_mensaje: result.meta.last_row_id,
+					},
+					{ status: 201 }
+				);
+			} catch (error) {
+				const message = error instanceof Error ? error.message : String(error);
+				const lowerMessage = message.toLowerCase();
+
+				if (lowerMessage.includes("foreign key constraint failed")) {
+					return json({ ok: false, error: "id_evento no existe." }, { status: 400 });
+				}
+
+				return json({ ok: false, error: "No se pudo persistir el mensaje." }, { status: 500 });
+			}
+		}
+
+		// GET /eventos/:id/mensajes
+		// Historial de un chat, para que la app lo cargue al entrar (el
+		// socket TCP solo entrega mensajes nuevos en tiempo real, no
+		// historial pasado).
+		const mensajesEventoMatch = url.pathname.match(/^\/eventos\/(\d+)\/mensajes$/);
+
+		if (request.method === "GET" && mensajesEventoMatch) {
+			const idEvento = Number(mensajesEventoMatch[1]);
+
+			const evento = await env.unparche_db
+				.prepare(
+					`SELECT id_evento, chat_habilitado
+					FROM evento
+					WHERE id_evento = ?
+					AND fecha_eliminacion IS NULL`
+				)
+				.bind(idEvento)
+				.first();
+
+			if (!evento) {
+				return json({ ok: false, error: "Evento no encontrado." }, { status: 404 });
+			}
+
+			const mensajes = await env.unparche_db
+				.prepare(
+					`SELECT
+						id_mensaje,
+						nickname,
+						contenido,
+						fecha_envio
+					FROM mensaje_chat
+					WHERE id_evento = ?
+					ORDER BY fecha_envio ASC
+					LIMIT 200`
+				)
+				.bind(idEvento)
+				.all();
+
+			return json({ ok: true, evento, mensajes: mensajes.results });
 		}
 
 		// POST /auth/register
@@ -1610,6 +1741,23 @@ export default {
 			});
 		}
 
+
+		// GET ids de todos los eventos actuales con chat habilitado
+		if (request.method === "GET" && url.pathname === "/eventos/ids-actuales") {
+			const eventosActuales = await env.unparche_db
+				.prepare(
+					`SELECT
+						id_evento
+					FROM evento
+					WHERE ${activeEventCondition}
+					AND estado IN ('PROGRAMADO', 'EN_CURSO')
+					AND chat_habilitado = 1
+					ORDER BY fecha_inicio ASC`
+				)
+				.all<{ id_evento: number }>();
+
+			return json(eventosActuales.results.map((evento) => evento.id_evento));
+		}
 
 		// GET eventos
 		if (request.method === "GET" && url.pathname === "/eventos") {

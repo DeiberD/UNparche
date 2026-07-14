@@ -168,6 +168,7 @@ class EventSummary {
     required this.eventTypeId,
     required this.eventTypeName,
     required this.status,
+    required this.chatEnabled,
     required this.attendanceStatus,
   });
 
@@ -196,6 +197,7 @@ class EventSummary {
       eventTypeId: _toInt(json['id_tipo_evento']),
       eventTypeName: _cleanString(json['tipo_evento_nombre']),
       status: json['estado']?.toString() ?? 'PROGRAMADO',
+      chatEnabled: _toBool(json['chat_habilitado']) ?? false,
       attendanceStatus: _cleanString(json['estado_asistencia']),
     );
   }
@@ -223,6 +225,7 @@ class EventSummary {
   final int? eventTypeId;
   final String? eventTypeName;
   final String status;
+  final bool chatEnabled;
   final String? attendanceStatus;
 
   bool get hasLocation => latitude != null && longitude != null;
@@ -305,6 +308,7 @@ class EventSummary {
       eventTypeId: eventTypeId,
       eventTypeName: eventTypeName,
       status: status,
+      chatEnabled: chatEnabled,
       attendanceStatus: attendanceStatus ?? this.attendanceStatus,
     );
   }
