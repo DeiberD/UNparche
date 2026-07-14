@@ -4,6 +4,12 @@ import 'dart:io';
 
 import 'chat_message.dart';
 
+const _configuredChatServerHost = String.fromEnvironment('CHAT_SERVER_HOST');
+const _configuredChatServerPort = int.fromEnvironment(
+  'CHAT_SERVER_PORT',
+  defaultValue: 5000,
+);
+
 /// Excepcion lanzada cuando la conexion al chat server falla o se cae.
 class ChatSocketException implements Exception {
   ChatSocketException(this.message);
@@ -33,6 +39,45 @@ class ChatSocketException implements Exception {
 /// ```
 class ChatSocketClient {
   ChatSocketClient({required this.host, required this.port});
+
+  static String get defaultHost {
+    if (_configuredChatServerHost.isNotEmpty) {
+      return _configuredChatServerHost;
+    }
+
+    return '186.31.167.146'; // IP publica del server de chat.
+  }
+
+  static int get defaultPort => _configuredChatServerPort;
+
+  /// Abre una conexion corta para avisarle al chat server que existe un
+  /// nuevo evento con chat habilitado. El server espera:
+  /// {"type":"new_event","contenido":idEvento}
+  static Future<void> announceNewEvent({
+    required int idEvento,
+    String? host,
+    int? port,
+    Duration timeout = const Duration(seconds: 8),
+  }) async {
+    Socket? socket;
+    try {
+      socket = await Socket.connect(
+        host ?? defaultHost,
+        port ?? defaultPort,
+        timeout: timeout,
+      );
+      socket.write(
+        '${jsonEncode({'type': 'new_event', 'contenido': idEvento})}\n',
+      );
+      await socket.flush();
+    } on SocketException catch (e) {
+      throw ChatSocketException(
+        'No se pudo avisar al chat server del nuevo evento: ${e.message}',
+      );
+    } finally {
+      await socket?.close();
+    }
+  }
 
   final String host;
   final int port;
