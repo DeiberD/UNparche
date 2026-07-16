@@ -13,7 +13,6 @@ import 'auth_state.dart';
 import 'login_screen.dart';
 
 const _mapboxAccessToken = String.fromEnvironment('ACCESS_TOKEN');
-const _demoUserId = 1;
 
 enum _HomeTab { map, events, groups }
 
@@ -139,6 +138,7 @@ class _CampusMapScreenState extends State<CampusMapScreen> {
   _HomeTab _selectedTab = _HomeTab.events;
   EventFilters _filters = const EventFilters();
   EventTimeScope _eventTimeScope = EventTimeScope.future;
+  EventAttendanceScope _eventAttendanceScope = EventAttendanceScope.all;
   EventSummary? _focusedEvent;
   bool _isLoadingEvents = false;
   String? _eventsError;
@@ -146,7 +146,7 @@ class _CampusMapScreenState extends State<CampusMapScreen> {
   @override
   void initState() {
     super.initState();
-    _loadVisibleEvents();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _loadVisibleEvents());
   }
 
   Future<void> _loadVisibleEvents() async {
@@ -161,7 +161,7 @@ class _CampusMapScreenState extends State<CampusMapScreen> {
 
     try {
       final events = await _eventApiClient.fetchEvents(
-        viewerUserId: _demoUserId,
+        viewerUserId: AuthProvider.of(context).value.currentUser!.id,
       );
       final sortedEvents = [...events]
         ..sort((a, b) {
@@ -218,6 +218,7 @@ class _CampusMapScreenState extends State<CampusMapScreen> {
     }
 
     final messenger = ScaffoldMessenger.of(context);
+    final currentUser = authState.currentUser!;
     final event = await Navigator.of(context).push<CreatedEventDraft>(
       MaterialPageRoute(builder: (_) => const CreateEventScreen()),
     );
@@ -236,8 +237,8 @@ class _CampusMapScreenState extends State<CampusMapScreen> {
       latitude: event.latitude,
       longitude: event.longitude,
       visibility: event.apiVisibility,
-      organizerId: 1,
-      organizerName: 'Usuario comunitario',
+      organizerId: currentUser.id,
+      organizerName: '${currentUser.nombre} ${currentUser.apellido}',
       organizerEmail: null,
       organizerCareer: null,
       organizerInfo: null,
@@ -280,6 +281,11 @@ class _CampusMapScreenState extends State<CampusMapScreen> {
     final now = DateTime.now();
     return _allEvents.where((event) {
       if (!_matchesTimeScope(event, now)) {
+        return false;
+      }
+
+      if (_eventAttendanceScope == EventAttendanceScope.confirmed &&
+          !event.hasConfirmedAttendance) {
         return false;
       }
 
@@ -416,7 +422,7 @@ class _CampusMapScreenState extends State<CampusMapScreen> {
         builder: (_) => EventDetailScreen(
           event: event,
           eventApiClient: _eventApiClient,
-          currentUserId: _demoUserId,
+          currentUserId: AuthProvider.of(context).value.currentUser!.id,
           onAttendanceChanged: _replaceEvent,
         ),
       ),
@@ -488,6 +494,13 @@ class _CampusMapScreenState extends State<CampusMapScreen> {
                   onTimeScopeChanged: (scope) {
                     setState(() {
                       _eventTimeScope = scope;
+                      _filters = _filters.copyWith(clearDate: true);
+                    });
+                  },
+                  attendanceScope: _eventAttendanceScope,
+                  onAttendanceScopeChanged: (scope) {
+                    setState(() {
+                      _eventAttendanceScope = scope;
                       _filters = _filters.copyWith(clearDate: true);
                     });
                   },

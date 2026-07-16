@@ -8,6 +8,8 @@ import 'flutter_chat/chat_socket_client.dart';
 
 enum EventTimeScope { future, past }
 
+enum EventAttendanceScope { all, confirmed }
+
 abstract class _CalendarSelectionStrategy {
   const _CalendarSelectionStrategy();
 
@@ -146,6 +148,8 @@ class EventsListView extends StatelessWidget {
     required this.onEventTap,
     required this.onDateSelected,
     required this.onTimeScopeChanged,
+    required this.attendanceScope,
+    required this.onAttendanceScopeChanged,
   });
 
   static const background = Color(0xFFFBF5F2);
@@ -163,6 +167,8 @@ class EventsListView extends StatelessWidget {
   final ValueChanged<EventSummary> onEventTap;
   final ValueChanged<DateTime?> onDateSelected;
   final ValueChanged<EventTimeScope> onTimeScopeChanged;
+  final EventAttendanceScope attendanceScope;
+  final ValueChanged<EventAttendanceScope> onAttendanceScopeChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -190,6 +196,25 @@ class EventsListView extends StatelessWidget {
                 fontSize: 13,
                 fontWeight: FontWeight.w600,
               ),
+            ),
+            const SizedBox(height: 16),
+            SegmentedButton<EventAttendanceScope>(
+              segments: const [
+                ButtonSegment(
+                  value: EventAttendanceScope.all,
+                  icon: Icon(Icons.public),
+                  label: Text('Todos'),
+                ),
+                ButtonSegment(
+                  value: EventAttendanceScope.confirmed,
+                  icon: Icon(Icons.event_available_outlined),
+                  label: Text('Confirmados'),
+                ),
+              ],
+              selected: {attendanceScope},
+              onSelectionChanged: (selection) {
+                onAttendanceScopeChanged(selection.first);
+              },
             ),
             const SizedBox(height: 16),
             _EventCalendarStrip(

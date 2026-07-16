@@ -11,8 +11,13 @@ class GroupApiClient {
   final Uri _baseUri;
   final HttpClient _httpClient;
 
-  Future<List<GroupSummary>> fetchGroups() async {
-    final request = await _httpClient.getUrl(_baseUri.resolve('/grupos'));
+  Future<List<GroupSummary>> fetchGroups({int? userId}) async {
+    final groupsUri = _baseUri
+        .resolve('/grupos')
+        .replace(
+          queryParameters: userId == null ? null : {'id_usuario': '$userId'},
+        );
+    final request = await _httpClient.getUrl(groupsUri);
     final response = await request.close();
     final responseBody = await response.transform(utf8.decoder).join();
     final decoded = responseBody.isEmpty ? null : jsonDecode(responseBody);
@@ -65,7 +70,13 @@ class GroupApiClient {
       );
     }
 
-    return GroupSummary.fromJson(decoded['grupo'] as Map<String, dynamic>);
+    // El creador se registra también como miembro activo en la misma operación.
+    // La respuesta de algunas versiones desplegadas de la API todavía no incluye
+    // estas dos banderas, así que las establecemos con la información de la
+    // solicitud para que la interfaz se actualice correctamente de inmediato.
+    return GroupSummary.fromJson(
+      decoded['grupo'] as Map<String, dynamic>,
+    ).copyWith(isMember: true, isCreator: true);
   }
 
   Future<List<GroupInvitation>> fetchInvitations({required int userId}) async {
@@ -149,6 +160,8 @@ class GroupSummary {
     required this.verificationStatus,
     required this.adminId,
     required this.memberCount,
+    required this.isMember,
+    required this.isCreator,
   });
 
   factory GroupSummary.fromJson(Map<String, dynamic> json) {
@@ -161,6 +174,8 @@ class GroupSummary {
       verificationStatus: json['estado_verificacion']?.toString() ?? '',
       adminId: _toInt(json['id_administrador']),
       memberCount: _toInt(json['cantidad_integrantes']) ?? 0,
+      isMember: _toBool(json['es_miembro']),
+      isCreator: _toBool(json['es_creador']),
     );
   }
 
@@ -172,6 +187,23 @@ class GroupSummary {
   final String verificationStatus;
   final int? adminId;
   final int memberCount;
+  final bool isMember;
+  final bool isCreator;
+
+  GroupSummary copyWith({bool? isMember, bool? isCreator}) {
+    return GroupSummary(
+      id: id,
+      name: name,
+      description: description,
+      category: category,
+      isOfficial: isOfficial,
+      verificationStatus: verificationStatus,
+      adminId: adminId,
+      memberCount: memberCount,
+      isMember: isMember ?? this.isMember,
+      isCreator: isCreator ?? this.isCreator,
+    );
+  }
 
   String get categoryLabel => groupCategoryLabel(category);
 

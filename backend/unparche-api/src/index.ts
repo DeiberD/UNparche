@@ -510,7 +510,27 @@ export default {
 
 		// GET grupos
 		if (request.method === "GET" && url.pathname === "/grupos") {
-			const grupos = await env.unparche_db
+			const idUsuarioParam = url.searchParams.get("id_usuario");
+			const idUsuario = idUsuarioParam === null ? null : Number(idUsuarioParam);
+
+			if (idUsuarioParam !== null && !Number.isInteger(idUsuario)) {
+				return json(
+					{ ok: false, error: "id_usuario debe ser entero." },
+					{ status: 400 }
+				);
+			}
+
+			const relacionSelect = idUsuario === null
+				? `0 AS es_miembro, 0 AS es_creador`
+				: `MAX(CASE WHEN mu.id_usuario IS NOT NULL THEN 1 ELSE 0 END) AS es_miembro,
+					MAX(CASE WHEN g.id_administrador = ? THEN 1 ELSE 0 END) AS es_creador`;
+			const relacionJoin = idUsuario === null
+				? ""
+				: `LEFT JOIN membresia_grupo mu
+					ON mu.id_grupo = g.id_grupo
+					AND mu.id_usuario = ?
+					AND mu.estado = 'ACTIVA'`;
+			const gruposStatement = env.unparche_db
 				.prepare(
 					`SELECT
 						g.id_grupo,
@@ -523,12 +543,14 @@ export default {
 						g.id_administrador,
 						u.nombre || ' ' || u.apellido AS administrador_nombre,
 						COUNT(m.id_membresia) AS cantidad_integrantes,
-						COUNT(m.id_membresia) AS total_miembros
+						COUNT(m.id_membresia) AS total_miembros,
+						${relacionSelect}
 					FROM grupo g
 					JOIN usuario u ON u.id_usuario = g.id_administrador
 					LEFT JOIN membresia_grupo m
 						ON m.id_grupo = g.id_grupo
 						AND m.estado = 'ACTIVA'
+					${relacionJoin}
 					GROUP BY
 						g.id_grupo,
 						g.nombre,
@@ -541,8 +563,10 @@ export default {
 						u.nombre,
 						u.apellido
 					ORDER BY g.nombre ASC`
-				)
-				.all();
+				);
+			const grupos = idUsuario === null
+				? await gruposStatement.all()
+				: await gruposStatement.bind(idUsuario, idUsuario).all();
 
 			return json({ ok: true, grupos: grupos.results });
 		}

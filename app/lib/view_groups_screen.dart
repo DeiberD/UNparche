@@ -11,7 +11,6 @@ class GroupsScreen extends StatefulWidget {
   static const surface = Color(0xFFF3ECE8);
   static const ink = Color(0xFF263020);
   static const accent = Color(0xFFEEDDF0);
-  static const demoUserId = 1;
   static const allCategoriesFilter = '__ALL_CATEGORIES__';
 
   final GroupApiClient? groupApiClient;
@@ -29,12 +28,13 @@ class _GroupsScreenState extends State<GroupsScreen> {
   String _query = '';
   GroupTypeFilter _typeFilter = GroupTypeFilter.all;
   String? _categoryFilter;
+  bool _showOnlyMyGroups = true;
 
   @override
   void initState() {
     super.initState();
     _groupApiClient = widget.groupApiClient ?? GroupApiClient();
-    _loadGroups();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _loadGroups());
   }
 
   Future<void> _loadGroups() async {
@@ -48,9 +48,15 @@ class _GroupsScreenState extends State<GroupsScreen> {
     });
 
     try {
+      final userId = AuthProvider.of(context).value.currentUser?.id;
+      if (userId == null) {
+        throw const GroupApiException(
+          'Inicia sesión para consultar tus grupos.',
+        );
+      }
       final results = await Future.wait([
-        _groupApiClient.fetchGroups(),
-        _groupApiClient.fetchInvitations(userId: GroupsScreen.demoUserId),
+        _groupApiClient.fetchGroups(userId: userId),
+        _groupApiClient.fetchInvitations(userId: userId),
       ]);
 
       if (!mounted) {
@@ -90,6 +96,9 @@ class _GroupsScreenState extends State<GroupsScreen> {
   List<GroupSummary> get _filteredGroups {
     return _groups
         .where(
+          (group) => !_showOnlyMyGroups || group.isMember || group.isCreator,
+        )
+        .where(
           (group) => group.matches(
             query: _query,
             typeFilter: _typeFilter,
@@ -108,11 +117,13 @@ class _GroupsScreenState extends State<GroupsScreen> {
     final authState = AuthProvider.of(context).value;
     if (!authState.isAuthenticated) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Necesitas iniciar sesión para crear un grupo.')),
+        const SnackBar(
+          content: Text('Necesitas iniciar sesión para crear un grupo.'),
+        ),
       );
-      Navigator.of(context).push(
-        MaterialPageRoute(builder: (_) => const LoginScreen()),
-      );
+      Navigator.of(
+        context,
+      ).push(MaterialPageRoute(builder: (_) => const LoginScreen()));
       return;
     }
 
@@ -236,6 +247,25 @@ class _GroupsScreenState extends State<GroupsScreen> {
               ],
             ),
             const SizedBox(height: 16),
+            SegmentedButton<bool>(
+              segments: const [
+                ButtonSegment(
+                  value: true,
+                  icon: Icon(Icons.person_outline),
+                  label: Text('Mis grupos'),
+                ),
+                ButtonSegment(
+                  value: false,
+                  icon: Icon(Icons.explore_outlined),
+                  label: Text('Explorar'),
+                ),
+              ],
+              selected: {_showOnlyMyGroups},
+              onSelectionChanged: (selection) {
+                setState(() => _showOnlyMyGroups = selection.first);
+              },
+            ),
+            const SizedBox(height: 12),
             _GroupSearchField(
               query: _query,
               onChanged: (value) => setState(() => _query = value),
@@ -339,7 +369,7 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
           name: _nameController.text.trim(),
           description: _descriptionController.text.trim(),
           category: _category,
-          adminId: GroupsScreen.demoUserId,
+          adminId: AuthProvider.of(context).value.currentUser!.id,
         ),
       );
 
@@ -603,15 +633,26 @@ class GroupListTile extends StatelessWidget {
                   ),
                 ),
                 const Spacer(),
-                TextButton.icon(
-                  onPressed: onJoinPressed,
-                  icon: const Icon(Icons.lock_outline, size: 16),
-                  label: const Text('Por invitacion'),
-                  style: TextButton.styleFrom(
-                    foregroundColor: GroupsScreen.ink,
-                    textStyle: const TextStyle(fontWeight: FontWeight.w800),
+                if (group.isCreator)
+                  const Chip(
+                    avatar: Icon(Icons.admin_panel_settings_outlined, size: 16),
+                    label: Text('Creado por ti'),
+                  )
+                else if (group.isMember)
+                  const Chip(
+                    avatar: Icon(Icons.check_circle_outline, size: 16),
+                    label: Text('Eres miembro'),
+                  )
+                else
+                  TextButton.icon(
+                    onPressed: onJoinPressed,
+                    icon: const Icon(Icons.lock_outline, size: 16),
+                    label: const Text('Por invitacion'),
+                    style: TextButton.styleFrom(
+                      foregroundColor: GroupsScreen.ink,
+                      textStyle: const TextStyle(fontWeight: FontWeight.w800),
+                    ),
                   ),
-                ),
               ],
             ),
           ],
