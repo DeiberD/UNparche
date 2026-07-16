@@ -8,7 +8,7 @@ import 'flutter_chat/chat_socket_client.dart';
 
 enum EventTimeScope { future, past }
 
-enum EventAttendanceScope { all, confirmed }
+enum EventAttendanceScope { all, confirmed, created }
 
 abstract class _CalendarSelectionStrategy {
   const _CalendarSelectionStrategy();
@@ -202,13 +202,24 @@ class EventsListView extends StatelessWidget {
               segments: const [
                 ButtonSegment(
                   value: EventAttendanceScope.all,
-                  icon: Icon(Icons.public),
-                  label: Text('Todos'),
+                  label: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Text('Todos', maxLines: 1, softWrap: false),
+                  ),
                 ),
                 ButtonSegment(
                   value: EventAttendanceScope.confirmed,
-                  icon: Icon(Icons.event_available_outlined),
-                  label: Text('Confirmados'),
+                  label: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Text('Confirmados', maxLines: 1, softWrap: false),
+                  ),
+                ),
+                ButtonSegment(
+                  value: EventAttendanceScope.created,
+                  label: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Text('Creados por mí', maxLines: 1, softWrap: false),
+                  ),
                 ),
               ],
               selected: {attendanceScope},
@@ -861,12 +872,14 @@ class EventDetailScreen extends StatefulWidget {
     required this.eventApiClient,
     required this.currentUserId,
     required this.onAttendanceChanged,
+    required this.onDeleted,
   });
 
   final EventSummary event;
   final EventApiClient eventApiClient;
   final int currentUserId;
   final ValueChanged<EventSummary> onAttendanceChanged;
+  final ValueChanged<int> onDeleted;
 
   @override
   State<EventDetailScreen> createState() => _EventDetailScreenState();
@@ -875,6 +888,7 @@ class EventDetailScreen extends StatefulWidget {
 class _EventDetailScreenState extends State<EventDetailScreen> {
   late EventSummary _event;
   bool _isUpdatingAttendance = false;
+  bool _isDeleting = false;
 
   @override
   void initState() {
@@ -1005,6 +1019,24 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
                   ? _toggleAttendance
                   : null,
             ),
+            if (event.organizerId == widget.currentUserId) ...[
+              const SizedBox(height: 12),
+              OutlinedButton.icon(
+                onPressed: _isDeleting ? null : _confirmDelete,
+                icon: _isDeleting
+                    ? const SizedBox.square(
+                        dimension: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.delete_outline),
+                label: Text(_isDeleting ? 'Eliminando...' : 'Eliminar evento'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: Colors.red.shade700,
+                  side: BorderSide(color: Colors.red.shade300),
+                  minimumSize: const Size.fromHeight(50),
+                ),
+              ),
+            ],
             const SizedBox(height: 12),
             SizedBox(
               height: 54,
@@ -1097,6 +1129,49 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
       if (mounted) {
         setState(() => _isUpdatingAttendance = false);
       }
+    }
+  }
+
+  Future<void> _confirmDelete() async {
+    final eventId = _event.id;
+    if (eventId == null || _isDeleting) return;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Eliminar evento'),
+        content: Text(
+          '¿Seguro que deseas eliminar “${_event.title}”? Esta acción lo quitará de los eventos disponibles.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            style: FilledButton.styleFrom(backgroundColor: Colors.red.shade700),
+            child: const Text('Eliminar'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    setState(() => _isDeleting = true);
+    try {
+      await widget.eventApiClient.deleteEvent(
+        eventId: eventId,
+        userId: widget.currentUserId,
+      );
+      widget.onDeleted(eventId);
+      if (mounted) Navigator.of(context).pop();
+    } on EventApiException catch (error) {
+      _showAttendanceMessage(error.message);
+    } catch (_) {
+      _showAttendanceMessage('No se pudo eliminar el evento.');
+    } finally {
+      if (mounted) setState(() => _isDeleting = false);
     }
   }
 

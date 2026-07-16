@@ -9,10 +9,15 @@ import 'location_picker_screen.dart';
 /// Collects the event information, validates the publication rules, lets the
 /// organizer choose a point on the campus map and sends the request to the API.
 class CreateEventScreen extends StatefulWidget {
-  const CreateEventScreen({super.key, this.eventApiClient});
+  const CreateEventScreen({
+    super.key,
+    required this.organizerId,
+    this.eventApiClient,
+  });
 
   // Optional dependency injection keeps the screen testable without a real API.
   final EventApiClient? eventApiClient;
+  final int organizerId;
 
   @override
   State<CreateEventScreen> createState() => _CreateEventScreenState();
@@ -23,7 +28,6 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
   static const _background = Color(0xFFFBF5F2);
   static const _surface = Color(0xFFF3ECE8);
   static const _ink = Color(0xFF263020);
-  static const _demoOrganizerId = 1;
 
   static const _eventTypes = [
     'Academico',
@@ -207,7 +211,7 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
                   longitude: location.longitude,
                 )
                 ..visibleAs(visibility)
-                ..organizedBy(_demoOrganizerId)
+                ..organizedBy(widget.organizerId)
                 ..typedAs(eventTypeId)
                 ..withChatEnabled(_chatEnabled))
               .build();

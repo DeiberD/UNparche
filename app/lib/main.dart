@@ -220,7 +220,9 @@ class _CampusMapScreenState extends State<CampusMapScreen> {
     final messenger = ScaffoldMessenger.of(context);
     final currentUser = authState.currentUser!;
     final event = await Navigator.of(context).push<CreatedEventDraft>(
-      MaterialPageRoute(builder: (_) => const CreateEventScreen()),
+      MaterialPageRoute(
+        builder: (_) => CreateEventScreen(organizerId: currentUser.id),
+      ),
     );
 
     if (event == null) {
@@ -289,6 +291,11 @@ class _CampusMapScreenState extends State<CampusMapScreen> {
         return false;
       }
 
+      if (_eventAttendanceScope == EventAttendanceScope.created &&
+          event.organizerId != AuthProvider.of(context).value.currentUser!.id) {
+        return false;
+      }
+
       final date = _filters.date;
       if (includeDate && date != null) {
         final start = event.start;
@@ -317,17 +324,16 @@ class _CampusMapScreenState extends State<CampusMapScreen> {
       return false;
     }
 
-    final eventDate = DateUtils.dateOnly(eventStart.toLocal());
-    final today = DateUtils.dateOnly(now);
-    final next7Days = DateUtils.dateOnly(now.add(const Duration(days: 7)));
+    final localStart = eventStart.toLocal();
+    final next7Days = now.add(const Duration(days: 7));
 
     return switch (_eventTimeScope) {
       EventTimeScope.future =>
         event.isActive &&
-            !eventDate.isBefore(today) &&
-            !eventDate.isAfter(next7Days),
+            !localStart.isBefore(now) &&
+            !localStart.isAfter(next7Days),
       EventTimeScope.past =>
-        event.status != 'CANCELADO' && eventDate.isBefore(today),
+        event.status != 'CANCELADO' && localStart.isBefore(now),
     };
   }
 
@@ -424,6 +430,7 @@ class _CampusMapScreenState extends State<CampusMapScreen> {
           eventApiClient: _eventApiClient,
           currentUserId: AuthProvider.of(context).value.currentUser!.id,
           onAttendanceChanged: _replaceEvent,
+          onDeleted: _removeEvent,
         ),
       ),
     );
@@ -453,6 +460,13 @@ class _CampusMapScreenState extends State<CampusMapScreen> {
       if (_focusedEvent?.id == updatedEvent.id) {
         _focusedEvent = updatedEvent;
       }
+    });
+  }
+
+  void _removeEvent(int eventId) {
+    setState(() {
+      _allEvents = _allEvents.where((event) => event.id != eventId).toList();
+      if (_focusedEvent?.id == eventId) _focusedEvent = null;
     });
   }
 
