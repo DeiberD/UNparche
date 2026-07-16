@@ -1453,6 +1453,15 @@ export default {
 		// DELETE borrar evento (/eventos/:id)
 		if (request.method === "DELETE" && eventoMatch) {
 			const idEvento = Number(eventoMatch[1]);
+			const idUsuarioParam = url.searchParams.get("id_usuario");
+			const idUsuario = idUsuarioParam === null ? null : Number(idUsuarioParam);
+
+			if (idUsuario === null || !Number.isInteger(idUsuario)) {
+				return json(
+					{ ok: false, error: "id_usuario debe ser entero." },
+					{ status: 400 }
+				);
+			}
 
 			const eventoActual = await env.unparche_db
 				.prepare(
@@ -1460,7 +1469,8 @@ export default {
 						id_evento,
 						titulo,
 						estado,
-						fecha_eliminacion
+						fecha_eliminacion,
+						id_organizador
 					FROM evento
 					WHERE id_evento = ?
 					AND ${activeEventCondition}`
@@ -1472,6 +1482,13 @@ export default {
 				return json({ ok: false, error: "Evento no encontrado." }, { status: 404 });
 			}
 
+			if ((eventoActual as { id_organizador: number }).id_organizador !== idUsuario) {
+				return json(
+					{ ok: false, error: "Solo el creador puede eliminar este evento." },
+					{ status: 403 }
+				);
+			}
+
 			try {
 				await env.unparche_db
 					.prepare(
@@ -1480,9 +1497,10 @@ export default {
 							estado = 'CANCELADO',
 							fecha_eliminacion = CURRENT_TIMESTAMP
 						WHERE id_evento = ?
+						AND id_organizador = ?
 						AND fecha_eliminacion IS NULL`
 					)
-					.bind(idEvento)
+					.bind(idEvento, idUsuario)
 					.run();
 
 				const evento = await env.unparche_db
