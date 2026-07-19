@@ -299,6 +299,62 @@ describe("UNparche API worker", () => {
 		await expect(response.json()).resolves.toEqual({ ok: true, evento });
 	});
 
+	it("lists attended event history including lifecycle-archived events", async () => {
+		const eventos = [
+			{
+				id_evento: 7,
+				titulo: "Taller finalizado",
+				fecha_fin: "2026-07-01 18:00:00",
+				fecha_eliminacion: "2026-07-02 18:00:00",
+				estado: "FINALIZADO",
+				estado_asistencia: "CONFIRMADA",
+			},
+		];
+		const queries: string[] = [];
+		let prepareCall = 0;
+		let boundUserId: unknown = null;
+		const request = new IncomingRequest(
+			"http://example.com/usuarios/2/eventos/historial"
+		);
+		const ctx = createExecutionContext();
+		const testEnv = {
+			unparche_db: {
+				prepare: (query: string) => {
+					queries.push(query);
+					prepareCall += 1;
+
+					if (prepareCall === 1) {
+						return {
+							bind: () => ({ first: async () => ({ id_usuario: 2 }) }),
+						};
+					}
+
+					return {
+						bind: (idUsuario: unknown) => {
+							boundUserId = idUsuario;
+							return { all: async () => ({ results: eventos }) };
+						},
+					};
+				},
+			} as unknown as D1Database,
+		} as Env & { unparche_db: D1Database };
+
+		const response = await worker.fetch(request, testEnv, ctx);
+		await waitOnExecutionContext(ctx);
+
+		expect(response.status).toBe(200);
+		expect(boundUserId).toBe(2);
+		expect(queries[1]).toContain("a.estado = 'CONFIRMADA'");
+		expect(queries[1]).toContain("datetime(e.fecha_fin) < datetime('now')");
+		expect(queries[1]).toContain("e.fecha_eliminacion");
+		expect(queries[1]).not.toContain("e.fecha_eliminacion IS NULL");
+		await expect(response.json()).resolves.toEqual({
+			ok: true,
+			id_usuario: 2,
+			eventos,
+		});
+	});
+
 	it("registers event attendance", async () => {
 		const evento = {
 			id_evento: 1,
