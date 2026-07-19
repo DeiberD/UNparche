@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
-import 'event_api_client.dart';
+import 'services/event_api_client.dart';
+import 'models/create_event_request.dart';
 import 'flutter_chat/chat_socket_client.dart';
 import 'location_picker_screen.dart';
 

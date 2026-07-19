@@ -1,7 +1,9 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 
-import 'event_api_client.dart';
+import 'services/event_api_client.dart';
+import 'models/event_summary.dart';
+import 'models/event_api_exception.dart';
 import 'auth_state.dart';
 import 'flutter_chat/chat_message.dart';
 import 'flutter_chat/chat_socket_client.dart';

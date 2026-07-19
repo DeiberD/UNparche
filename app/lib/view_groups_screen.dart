@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 
-import 'group_api_client.dart';
+import 'services/group_api_client.dart';
+import 'models/group_summary.dart';
+import 'models/group_invitation.dart';
+import 'models/create_group_request.dart';
 import 'auth_state.dart';
 import 'login_screen.dart';
 
