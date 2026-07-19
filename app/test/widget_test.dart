@@ -57,6 +57,24 @@ void main() {
     );
   });
 
+  test('identifies events archived by lifecycle for HU-24 history', () {
+    final event = EventSummary.fromJson({
+      'id_evento': 24,
+      'titulo': 'Evento recordado',
+      'descripcion': 'Actividad pasada',
+      'fecha_inicio': '2026-06-20T14:00:00.000Z',
+      'fecha_fin': '2026-06-20T16:00:00.000Z',
+      'fecha_eliminacion': '2026-06-21T16:00:00.000Z',
+      'estado': 'FINALIZADO',
+      'estado_asistencia': 'CONFIRMADA',
+    });
+
+    expect(event.id, 24);
+    expect(event.isArchived, isTrue);
+    expect(event.hasConfirmedAttendance, isTrue);
+    expect(event.archivedAt, DateTime.utc(2026, 6, 21, 16));
+  });
+
   testWidgets('shows UNparche on the home screen', (WidgetTester tester) async {
     await tester.pumpWidget(const UNparcheApp());
 

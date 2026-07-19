@@ -56,6 +56,38 @@ class EventApiClient {
         .toList();
   }
 
+  Future<List<EventSummary>> fetchAttendanceHistory({
+    required int userId,
+  }) async {
+    final request = await _httpClient.getUrl(
+      _baseUri.resolve('/usuarios/$userId/eventos/historial'),
+    );
+    final response = await request.close();
+    final responseBody = await response.transform(utf8.decoder).join();
+    final decoded = responseBody.isEmpty ? null : jsonDecode(responseBody);
+
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      final message = decoded is Map<String, dynamic>
+          ? decoded['error']?.toString()
+          : null;
+      throw EventApiException(
+        message ?? 'No se pudo cargar el historial de eventos.',
+        statusCode: response.statusCode,
+      );
+    }
+
+    if (decoded is! Map<String, dynamic> || decoded['eventos'] is! List) {
+      throw const EventApiException(
+        'La API devolvio un historial inesperado.',
+      );
+    }
+
+    return (decoded['eventos'] as List)
+        .whereType<Map<String, dynamic>>()
+        .map(EventSummary.fromJson)
+        .toList();
+  }
+
   Future<Map<String, dynamic>> confirmAttendance({
     required int eventId,
     required int userId,
@@ -182,6 +214,7 @@ class EventSummary {
     required this.status,
     required this.chatEnabled,
     required this.attendanceStatus,
+    this.archivedAt,
   });
 
   factory EventSummary.fromJson(Map<String, dynamic> json) {
@@ -211,6 +244,7 @@ class EventSummary {
       status: json['estado']?.toString() ?? 'PROGRAMADO',
       chatEnabled: _toBool(json['chat_habilitado']) ?? false,
       attendanceStatus: _cleanString(json['estado_asistencia']),
+      archivedAt: _toDateTime(json['fecha_eliminacion']),
     );
   }
 
@@ -239,11 +273,13 @@ class EventSummary {
   final String status;
   final bool chatEnabled;
   final String? attendanceStatus;
+  final DateTime? archivedAt;
 
   bool get hasLocation => latitude != null && longitude != null;
   bool get isPublic => visibility == 'PUBLICA';
   bool get isActive => status == 'PROGRAMADO' || status == 'EN_CURSO';
   bool get hasConfirmedAttendance => attendanceStatus == 'CONFIRMADA';
+  bool get isArchived => archivedAt != null;
   bool get belongsToGroup => groupId != null;
   bool get hasCompleteRequiredDetails =>
       title.trim().isNotEmpty &&
@@ -322,6 +358,7 @@ class EventSummary {
       status: status,
       chatEnabled: chatEnabled,
       attendanceStatus: attendanceStatus ?? this.attendanceStatus,
+      archivedAt: archivedAt,
     );
   }
 
