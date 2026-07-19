@@ -5,7 +5,8 @@ import '../../models/create_group_request.dart';
 import '../../models/group_summary.dart';
 import '../../models/group_api_exception.dart';
 import '../../state/auth_state.dart';
-import 'view_groups_screen.dart'; // To get GroupsScreen constants (background, ink, etc)
+import '../../theme/campus_colors.dart';
+
 
 class CreateGroupScreen extends StatefulWidget {
   const CreateGroupScreen({super.key, this.groupApiClient});
@@ -74,10 +75,10 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: GroupsScreen.background,
+      backgroundColor: campusBackground,
       appBar: AppBar(
-        backgroundColor: GroupsScreen.background,
-        foregroundColor: GroupsScreen.ink,
+        backgroundColor: campusBackground,
+        foregroundColor: campusInk,
         title: const Text(
           'Nuevo grupo',
           style: TextStyle(fontWeight: FontWeight.w800),
@@ -92,14 +93,14 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
               Container(
                 padding: const EdgeInsets.all(18),
                 decoration: BoxDecoration(
-                  color: GroupsScreen.surface,
+                  color: campusSurface,
                   borderRadius: BorderRadius.circular(18),
-                  border: Border.all(color: GroupsScreen.ink.withAlpha(24)),
+                  border: Border.all(color: campusInk.withAlpha(24)),
                 ),
                 child: const Row(
                   children: [
                     CircleAvatar(
-                      backgroundColor: GroupsScreen.accent,
+                      backgroundColor: campusAccent,
                       child: Icon(Icons.groups_2_outlined),
                     ),
                     SizedBox(width: 12),
@@ -107,7 +108,7 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
                       child: Text(
                         'Los grupos creados aqui son no oficiales y quedan sin sello de verificacion.',
                         style: TextStyle(
-                          color: GroupsScreen.ink,
+                          color: campusInk,
                           fontWeight: FontWeight.w700,
                           height: 1.3,
                         ),
@@ -153,9 +154,9 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
                   return ChoiceChip(
                     label: Text(groupCategoryLabel(category)),
                     selected: selected,
-                    selectedColor: GroupsScreen.ink,
+                    selectedColor: campusInk,
                     labelStyle: TextStyle(
-                      color: selected ? Colors.white : GroupsScreen.ink,
+                      color: selected ? Colors.white : campusInk,
                       fontWeight: FontWeight.w700,
                     ),
                     onSelected: (_) => setState(() => _category = category),
@@ -176,7 +177,7 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
                       : const Icon(Icons.add),
                   label: Text(_isSaving ? 'Creando...' : 'Crear grupo'),
                   style: FilledButton.styleFrom(
-                    backgroundColor: GroupsScreen.ink,
+                    backgroundColor: campusInk,
                     foregroundColor: Colors.white,
                     textStyle: const TextStyle(fontWeight: FontWeight.w800),
                     shape: RoundedRectangleBorder(
@@ -203,7 +204,7 @@ class _SectionTitle extends StatelessWidget {
     return Text(
       label,
       style: const TextStyle(
-        color: GroupsScreen.ink,
+        color: campusInk,
         fontWeight: FontWeight.w800,
         fontSize: 15,
       ),

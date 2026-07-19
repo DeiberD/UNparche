@@ -1,12 +1,10 @@
-import 'dart:async';
 import 'package:flutter/material.dart';
 import '../../services/event_api_client.dart';
 import '../../models/event_summary.dart';
-import '../../models/event_api_exception.dart';
 import '../../state/auth_state.dart';
-import '../../flutter_chat/chat_message.dart';
-import '../../flutter_chat/chat_socket_client.dart';
-// TODO: clean up imports
+import '../../widgets/events/event_calendar_strip.dart';
+import '../../widgets/events/event_list_tile.dart';
+import '../../theme/campus_colors.dart';
 import '../../widgets/events/event_calendar_strip.dart';
 import '../../widgets/events/event_list_tile.dart';
 class EventsListView extends StatelessWidget {

@@ -4,9 +4,9 @@ import '../../services/event_api_client.dart';
 import '../../models/event_summary.dart';
 import '../../models/event_api_exception.dart';
 import '../../state/auth_state.dart';
-import '../../flutter_chat/chat_message.dart';
-import '../../flutter_chat/chat_socket_client.dart';
-// TODO: clean up imports
+import '../chat/event_chat_screen.dart';
+import 'event_organizer_detail_screen.dart';
+import '../../theme/campus_colors.dart';
 import '../chat/event_chat_screen.dart';
 import 'event_organizer_detail_screen.dart';
 class EventDetailScreen extends StatefulWidget {
