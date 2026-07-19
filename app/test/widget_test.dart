@@ -5,6 +5,7 @@ import 'package:app/main.dart';
 import 'package:app/event_api_client.dart';
 import 'package:app/event_cluster_data.dart';
 import 'package:app/location_picker_state.dart';
+import 'package:app/view_events_screen.dart';
 
 void main() {
   test('location picker states preserve valid workflow transitions', () {
@@ -85,6 +86,91 @@ void main() {
     expect(find.text('Mapa'), findsOneWidget);
   });
 
+  testWidgets('HU-24 shows an empty attended-event history message', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: EventsListView(
+            events: const [],
+            calendarEvents: const [],
+            selectedDate: null,
+            timeScope: EventTimeScope.past,
+            isLoading: false,
+            errorMessage: null,
+            onRefresh: () async {},
+            onEventTap: (_) {},
+            onDateSelected: (_) {},
+            onTimeScopeChanged: (_) {},
+            attendanceScope: EventAttendanceScope.confirmed,
+            onAttendanceScopeChanged: (_) {},
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('Historial de eventos'), findsOneWidget);
+    await tester.drag(find.byType(ListView), const Offset(0, -500));
+    await tester.pumpAndSettle();
+
+    expect(find.text('No hay eventos en tu historial'), findsOneWidget);
+    expect(
+      find.text('Cuando asistas a un evento, podras recordarlo aqui.'),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('HU-24 opens archived event details without restoring the map', (
+    WidgetTester tester,
+  ) async {
+    final event = EventSummary.fromJson({
+      'id_evento': 24,
+      'titulo': 'Encuentro cultural',
+      'descripcion': 'Actividad archivada del campus',
+      'fecha_inicio': '2026-06-20T14:00:00.000Z',
+      'duracion_minutos': 120,
+      'fecha_fin': '2026-06-20T16:00:00.000Z',
+      'fecha_eliminacion': '2026-06-21T16:00:00.000Z',
+      'latitud': 4.6382,
+      'longitud': -74.084,
+      'visibilidad': 'PUBLICA',
+      'chat_habilitado': 0,
+      'estado': 'FINALIZADO',
+      'id_organizador': 8,
+      'organizador_nombre': 'Organizador UN',
+      'id_tipo_evento': 2,
+      'tipo_evento_nombre': 'CULTURAL',
+      'estado_asistencia': 'CONFIRMADA',
+    });
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: EventDetailScreen(
+          event: event,
+          eventApiClient: EventApiClient(baseUrl: 'http://example.com'),
+          currentUserId: 4,
+          onAttendanceChanged: (_) {},
+          onDeleted: (_) {},
+        ),
+      ),
+    );
+
+    expect(find.text('Encuentro cultural'), findsOneWidget);
+    expect(
+      find.textContaining('fue archivado por su ciclo de vida'),
+      findsOneWidget,
+    );
+
+    await tester.drag(find.byType(ListView), const Offset(0, -700));
+    await tester.pumpAndSettle();
+
+    final mapButton = tester.widget<FilledButton>(
+      find.widgetWithText(FilledButton, 'Ver ubicacion en mapa'),
+    );
+    expect(mapButton.onPressed, isNull);
+  });
+
   testWidgets('opens the HU-27 create event form', (WidgetTester tester) async {
     await tester.pumpWidget(const UNparcheApp());
 
@@ -131,6 +217,7 @@ EventSummary _event({int? id, double? latitude, double? longitude}) {
     eventTypeId: 1,
     eventTypeName: 'Academico',
     status: 'PROGRAMADO',
+    chatEnabled: false,
     attendanceStatus: null,
   );
 }
