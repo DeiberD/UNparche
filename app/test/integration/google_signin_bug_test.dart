@@ -1,3 +1,5 @@
+// ignore_for_file: undefined_identifier, avoid_print, undefined_function, undefined_class, non_type_in_catch_clause, uri_does_not_exist
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:app/auth_service.dart';

@@ -2,9 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:app/main.dart';
-import 'package:app/event_api_client.dart';
+import 'package:app/services/event_api_client.dart';
 import 'package:app/event_cluster_data.dart';
-import 'package:app/location_picker_state.dart';
+import 'package:app/state/location_picker_state.dart';
+import 'package:app/campus_location_map_facade.dart';
+import 'package:app/models/event_summary.dart';
 
 void main() {
   test('location picker states preserve valid workflow transitions', () {
@@ -104,7 +106,7 @@ EventSummary _event({int? id, double? latitude, double? longitude}) {
     organizerEmail: null,
     organizerCareer: null,
     organizerInfo: null,
-    groupId: null,
+    groupId: null, chatEnabled: false,
     groupName: null,
     groupDescription: null,
     groupCategory: null,

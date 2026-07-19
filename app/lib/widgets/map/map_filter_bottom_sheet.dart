@@ -1,12 +1,15 @@
 import 'package:flutter/material.dart';
+import '../../models/event_filters.dart';
+import '../events/event_helpers.dart';
+
 
 import '../../theme/campus_colors.dart';
 import '../../models/group_summary.dart';
 import '../../models/event_summary.dart';
 
 
-class _EventTypeFilterSheet extends StatelessWidget {
-  const _EventTypeFilterSheet();
+class EventTypeFilterSheet extends StatelessWidget {
+  const EventTypeFilterSheet();
 
   static const _types = [
     (id: 1, label: 'Academico', icon: Icons.school_outlined),
@@ -53,8 +56,8 @@ class _EventTypeFilterSheet extends StatelessWidget {
   }
 }
 
-class _GroupFilterSheet extends StatelessWidget {
-  const _GroupFilterSheet({required this.groupIds});
+class GroupFilterSheet extends StatelessWidget {
+  const GroupFilterSheet({required this.groupIds});
 
   final List<int> groupIds;
 
@@ -161,14 +164,14 @@ class EventFiltersBar extends StatelessWidget {
             icon: Icons.tune,
             label: filters.eventTypeId == null
                 ? 'Categoria'
-                : _eventTypeLabel(filters.eventTypeId),
+                : eventTypeLabel(filters.eventTypeId),
             selected: filters.eventTypeId != null,
             onPressed: onTypePressed,
           ),
           const SizedBox(width: 8),
           FilterChipMock(
             icon: Icons.calendar_today,
-            label: filters.date == null ? 'Fecha' : _shortDate(filters.date!),
+            label: filters.date == null ? 'Fecha' : shortEventDate(filters.date!),
             selected: filters.date != null,
             onPressed: onDatePressed,
           ),

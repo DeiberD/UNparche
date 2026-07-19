@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'event_helpers.dart';
 import '../../models/event_summary.dart';
 import '../../theme/campus_colors.dart';
 class EventListTile extends StatelessWidget {
@@ -22,10 +23,10 @@ class EventListTile extends StatelessWidget {
           padding: const EdgeInsets.all(14),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(18),
-            border: Border.all(color: EventsListView.ink.withAlpha(20)),
+            border: Border.all(color: campusInk.withAlpha(20)),
             boxShadow: [
               BoxShadow(
-                color: EventsListView.ink.withAlpha(12),
+                color: campusInk.withAlpha(12),
                 blurRadius: 14,
                 offset: const Offset(0, 6),
               ),
@@ -37,12 +38,12 @@ class EventListTile extends StatelessWidget {
                 width: 48,
                 height: 48,
                 decoration: BoxDecoration(
-                  color: _eventColor(event.eventTypeId).withAlpha(36),
+                  color: eventColor(event.eventTypeId).withAlpha(36),
                   borderRadius: BorderRadius.circular(14),
                 ),
                 child: Icon(
-                  _eventIcon(event.eventTypeId),
-                  color: _eventColor(event.eventTypeId),
+                  eventIcon(event.eventTypeId),
+                  color: eventColor(event.eventTypeId),
                 ),
               ),
               const SizedBox(width: 12),
@@ -55,7 +56,7 @@ class EventListTile extends StatelessWidget {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
-                        color: EventsListView.ink,
+                        color: campusInk,
                         fontSize: 16,
                         fontWeight: FontWeight.w800,
                       ),
@@ -66,7 +67,7 @@ class EventListTile extends StatelessWidget {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
-                        color: EventsListView.ink.withAlpha(180),
+                        color: campusInk.withAlpha(180),
                         fontSize: 12,
                         fontWeight: FontWeight.w700,
                       ),
@@ -79,7 +80,7 @@ class EventListTile extends StatelessWidget {
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
-                        color: EventsListView.ink.withAlpha(160),
+                        color: campusInk.withAlpha(160),
                         fontSize: 12,
                         height: 1.25,
                       ),
@@ -90,7 +91,7 @@ class EventListTile extends StatelessWidget {
               const SizedBox(width: 8),
               const Icon(
                 Icons.chevron_right,
-                color: EventsListView.ink,
+                color: campusInk,
                 size: 22,
               ),
             ],

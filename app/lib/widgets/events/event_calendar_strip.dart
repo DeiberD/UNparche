@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'event_helpers.dart';
 import '../../services/event_api_client.dart';
 import '../../models/event_summary.dart';
 import '../../models/event_scopes.dart';
@@ -66,7 +67,7 @@ class _PastCalendarSelectionStrategy extends _CalendarSelectionStrategy {
   bool get showsMonthControls => true;
 
   @override
-  String title(DateTime visibleMonth) => _calendarTitle(visibleMonth);
+  String title(DateTime visibleMonth) => calendarTitle(visibleMonth);
 
   @override
   Widget buildDateSelector({
@@ -129,8 +130,8 @@ class _CalendarDateOption {
   final bool isEnabled;
 }
 
-class _EventCalendarStrip extends StatefulWidget {
-  const _EventCalendarStrip({
+class EventCalendarStrip extends StatefulWidget {
+  const EventCalendarStrip({
     required this.events,
     required this.selectedDate,
     required this.timeScope,
@@ -145,10 +146,10 @@ class _EventCalendarStrip extends StatefulWidget {
   final ValueChanged<EventTimeScope> onTimeScopeChanged;
 
   @override
-  State<_EventCalendarStrip> createState() => _EventCalendarStripState();
+  State<EventCalendarStrip> createState() => EventCalendarStripState();
 }
 
-class _EventCalendarStripState extends State<_EventCalendarStrip> {
+class EventCalendarStripState extends State<EventCalendarStrip> {
   late DateTime _visibleMonth;
 
   @override
@@ -159,7 +160,7 @@ class _EventCalendarStripState extends State<_EventCalendarStrip> {
   }
 
   @override
-  void didUpdateWidget(covariant _EventCalendarStrip oldWidget) {
+  void didUpdateWidget(covariant EventCalendarStrip oldWidget) {
     super.didUpdateWidget(oldWidget);
 
     final selectedDate = widget.selectedDate;
@@ -175,9 +176,9 @@ class _EventCalendarStripState extends State<_EventCalendarStrip> {
     return Container(
       padding: const EdgeInsets.fromLTRB(14, 14, 14, 14),
       decoration: BoxDecoration(
-        color: EventsListView.surface,
+        color: campusSurface,
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: EventsListView.ink.withAlpha(22)),
+        border: Border.all(color: campusInk.withAlpha(22)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -186,7 +187,7 @@ class _EventCalendarStripState extends State<_EventCalendarStrip> {
             children: [
               const Icon(
                 Icons.calendar_month_outlined,
-                color: EventsListView.ink,
+                color: campusInk,
                 size: 20,
               ),
               const SizedBox(width: 8),
@@ -194,7 +195,7 @@ class _EventCalendarStripState extends State<_EventCalendarStrip> {
                 child: Text(
                   strategy.title(_visibleMonth),
                   style: const TextStyle(
-                    color: EventsListView.ink,
+                    color: campusInk,
                     fontSize: 16,
                     fontWeight: FontWeight.w900,
                   ),
@@ -205,7 +206,7 @@ class _EventCalendarStripState extends State<_EventCalendarStrip> {
                   tooltip: 'Mes anterior',
                   onPressed: () => _changeMonth(-1),
                   icon: const Icon(Icons.chevron_left),
-                  color: EventsListView.ink,
+                  color: campusInk,
                 ),
                 IconButton(
                   tooltip: 'Mes siguiente',
@@ -213,7 +214,7 @@ class _EventCalendarStripState extends State<_EventCalendarStrip> {
                       ? () => _changeMonth(1)
                       : null,
                   icon: const Icon(Icons.chevron_right),
-                  color: EventsListView.ink,
+                  color: campusInk,
                 ),
               ],
             ],
@@ -245,7 +246,7 @@ class _EventCalendarStripState extends State<_EventCalendarStrip> {
                     ? null
                     : () => widget.onDateSelected(null),
                 icon: const Icon(Icons.close),
-                color: EventsListView.ink,
+                color: campusInk,
               ),
             ],
           ),
@@ -387,7 +388,7 @@ class _ScopeButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: selected ? EventsListView.ink : Colors.white.withAlpha(236),
+      color: selected ? campusInk : Colors.white.withAlpha(236),
       borderRadius: BorderRadius.circular(14),
       child: InkWell(
         borderRadius: BorderRadius.circular(14),
@@ -399,8 +400,8 @@ class _ScopeButton extends StatelessWidget {
             borderRadius: BorderRadius.circular(14),
             border: Border.all(
               color: selected
-                  ? EventsListView.ink
-                  : EventsListView.ink.withAlpha(22),
+                  ? campusInk
+                  : campusInk.withAlpha(22),
             ),
           ),
           child: Row(
@@ -409,7 +410,7 @@ class _ScopeButton extends StatelessWidget {
               Icon(
                 icon,
                 size: 16,
-                color: selected ? Colors.white : EventsListView.ink,
+                color: selected ? Colors.white : campusInk,
               ),
               const SizedBox(width: 6),
               Flexible(
@@ -417,7 +418,7 @@ class _ScopeButton extends StatelessWidget {
                   label,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
-                    color: selected ? Colors.white : EventsListView.ink,
+                    color: selected ? Colors.white : campusInk,
                     fontSize: 12,
                     fontWeight: FontWeight.w900,
                   ),
@@ -443,7 +444,7 @@ class _WeekdayHeader extends StatelessWidget {
         label,
         textAlign: TextAlign.center,
         style: TextStyle(
-          color: EventsListView.ink.withAlpha(150),
+          color: campusInk.withAlpha(150),
           fontSize: 11,
           fontWeight: FontWeight.w900,
         ),
@@ -471,7 +472,7 @@ class _FutureDayButton extends StatelessWidget {
   Widget build(BuildContext context) {
     final hasEvents = eventCount > 0;
     return Material(
-      color: isSelected ? EventsListView.ink : Colors.white.withAlpha(236),
+      color: isSelected ? campusInk : Colors.white.withAlpha(236),
       borderRadius: BorderRadius.circular(16),
       child: InkWell(
         borderRadius: BorderRadius.circular(16),
@@ -484,21 +485,21 @@ class _FutureDayButton extends StatelessWidget {
             borderRadius: BorderRadius.circular(16),
             border: Border.all(
               color: isSelected
-                  ? EventsListView.ink
+                  ? campusInk
                   : isToday
-                  ? EventsListView.ink.withAlpha(80)
-                  : EventsListView.ink.withAlpha(hasEvents ? 36 : 18),
+                  ? campusInk.withAlpha(80)
+                  : campusInk.withAlpha(hasEvents ? 36 : 18),
             ),
           ),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text(
-                _weekdayLabel(date),
+                weekdayLabel(date),
                 style: TextStyle(
                   color: isSelected
                       ? Colors.white.withAlpha(220)
-                      : EventsListView.ink.withAlpha(150),
+                      : campusInk.withAlpha(150),
                   fontSize: 10,
                   fontWeight: FontWeight.w800,
                 ),
@@ -506,7 +507,7 @@ class _FutureDayButton extends StatelessWidget {
               Text(
                 date.day.toString(),
                 style: TextStyle(
-                  color: isSelected ? Colors.white : EventsListView.ink,
+                  color: isSelected ? Colors.white : campusInk,
                   fontSize: 23,
                   fontWeight: FontWeight.w900,
                 ),
@@ -518,15 +519,15 @@ class _FutureDayButton extends StatelessWidget {
                   color: isSelected
                       ? Colors.white.withAlpha(34)
                       : hasEvents
-                      ? EventsListView.accent
-                      : EventsListView.ink.withAlpha(10),
+                      ? campusAccent
+                      : campusInk.withAlpha(10),
                   borderRadius: BorderRadius.circular(10),
                 ),
                 child: Text(
                   '$eventCount',
                   textAlign: TextAlign.center,
                   style: TextStyle(
-                    color: isSelected ? Colors.white : EventsListView.ink,
+                    color: isSelected ? Colors.white : campusInk,
                     fontSize: 11,
                     fontWeight: FontWeight.w900,
                   ),
@@ -561,14 +562,14 @@ class _CalendarDayButton extends StatelessWidget {
   Widget build(BuildContext context) {
     final hasEvents = eventCount > 0;
     final ink = isEnabled
-        ? EventsListView.ink
-        : EventsListView.ink.withAlpha(86);
+        ? campusInk
+        : campusInk.withAlpha(86);
     return Material(
       color: isSelected
-          ? EventsListView.ink
+          ? campusInk
           : isEnabled
           ? Colors.white.withAlpha(236)
-          : EventsListView.ink.withAlpha(10),
+          : campusInk.withAlpha(10),
       borderRadius: BorderRadius.circular(16),
       child: InkWell(
         borderRadius: BorderRadius.circular(16),
@@ -579,10 +580,10 @@ class _CalendarDayButton extends StatelessWidget {
             borderRadius: BorderRadius.circular(14),
             border: Border.all(
               color: isSelected
-                  ? EventsListView.ink
+                  ? campusInk
                   : isToday
-                  ? EventsListView.ink.withAlpha(80)
-                  : EventsListView.ink.withAlpha(hasEvents ? 36 : 18),
+                  ? campusInk.withAlpha(80)
+                  : campusInk.withAlpha(hasEvents ? 36 : 18),
             ),
           ),
           child: Column(
@@ -603,8 +604,8 @@ class _CalendarDayButton extends StatelessWidget {
                   color: isSelected
                       ? Colors.white.withAlpha(34)
                       : hasEvents && isEnabled
-                      ? EventsListView.accent
-                      : EventsListView.ink.withAlpha(10),
+                      ? campusAccent
+                      : campusInk.withAlpha(10),
                   borderRadius: BorderRadius.circular(10),
                 ),
                 child: Text(

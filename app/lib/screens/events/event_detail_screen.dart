@@ -2,6 +2,8 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import '../../services/event_api_client.dart';
 import '../../models/event_summary.dart';
+import '../../theme/campus_colors.dart';
+import 'event_organizer_detail_screen.dart';
 import '../../models/event_api_exception.dart';
 import '../../state/auth_state.dart';
 import '../chat/event_chat_screen.dart';
@@ -47,10 +49,10 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
         ? 'Evento sin titulo'
         : event.title;
     return Scaffold(
-      backgroundColor: EventsListView.background,
+      backgroundColor: campusBackground,
       appBar: AppBar(
-        backgroundColor: EventsListView.background,
-        foregroundColor: EventsListView.ink,
+        backgroundColor: campusBackground,
+        foregroundColor: campusInk,
         title: const Text(
           'Detalle del evento',
           style: TextStyle(fontWeight: FontWeight.w800),
@@ -63,9 +65,9 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
             Container(
               padding: const EdgeInsets.all(18),
               decoration: BoxDecoration(
-                color: EventsListView.surface,
+                color: campusSurface,
                 borderRadius: BorderRadius.circular(18),
-                border: Border.all(color: EventsListView.ink.withAlpha(24)),
+                border: Border.all(color: campusInk.withAlpha(24)),
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -90,7 +92,7 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
                         child: Text(
                           event.eventTypeLabel,
                           style: const TextStyle(
-                            color: EventsListView.ink,
+                            color: campusInk,
                             fontWeight: FontWeight.w800,
                           ),
                         ),
@@ -101,7 +103,7 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
                   Text(
                     title,
                     style: const TextStyle(
-                      color: EventsListView.ink,
+                      color: campusInk,
                       fontSize: 26,
                       fontWeight: FontWeight.w900,
                     ),
@@ -112,7 +114,7 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
                         ? 'Sin descripcion disponible.'
                         : event.description,
                     style: TextStyle(
-                      color: EventsListView.ink.withAlpha(190),
+                      color: campusInk.withAlpha(190),
                       fontSize: 14,
                       height: 1.35,
                     ),
@@ -154,7 +156,7 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
               value: event.organizerLabel,
             ),
             const SizedBox(height: 12),
-            _OrganizerCard(event: event),
+            OrganizerCard(event: event),
             const SizedBox(height: 12),
             _AttendanceCard(
               event: event,
@@ -194,7 +196,7 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
                       icon: const Icon(Icons.map_outlined),
                       label: const Text('Ver ubicacion en mapa'),
                       style: FilledButton.styleFrom(
-                        backgroundColor: EventsListView.ink,
+                        backgroundColor: campusInk,
                         foregroundColor: Colors.white,
                         textStyle: const TextStyle(fontWeight: FontWeight.w800),
                         shape: RoundedRectangleBorder(
@@ -215,8 +217,8 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
                         icon: const Icon(Icons.chat_bubble_outline),
                         label: const Text('Chat'),
                         style: FilledButton.styleFrom(
-                          backgroundColor: EventsListView.accent,
-                          foregroundColor: EventsListView.ink,
+                          backgroundColor: campusAccent,
+                          foregroundColor: campusInk,
                           textStyle: const TextStyle(
                             fontWeight: FontWeight.w800,
                           ),
@@ -362,7 +364,7 @@ class _AttendanceCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: Colors.white.withAlpha(238),
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: EventsListView.ink.withAlpha(18)),
+        border: Border.all(color: campusInk.withAlpha(18)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -373,14 +375,14 @@ class _AttendanceCard extends StatelessWidget {
                 isConfirmed
                     ? Icons.check_circle_outline
                     : Icons.how_to_reg_outlined,
-                color: EventsListView.ink,
+                color: campusInk,
               ),
               const SizedBox(width: 10),
               Expanded(
                 child: Text(
                   'Asistencia',
                   style: TextStyle(
-                    color: EventsListView.ink.withAlpha(170),
+                    color: campusInk.withAlpha(170),
                     fontWeight: FontWeight.w800,
                   ),
                 ),
@@ -391,7 +393,7 @@ class _AttendanceCard extends StatelessWidget {
           Text(
             statusText,
             style: const TextStyle(
-              color: EventsListView.ink,
+              color: campusInk,
               fontWeight: FontWeight.w800,
             ),
           ),
@@ -422,7 +424,7 @@ class _AttendanceCard extends StatelessWidget {
               style: FilledButton.styleFrom(
                 backgroundColor: isConfirmed
                     ? const Color(0xFF7A3525)
-                    : EventsListView.ink,
+                    : campusInk,
                 foregroundColor: Colors.white,
                 textStyle: const TextStyle(fontWeight: FontWeight.w800),
                 shape: RoundedRectangleBorder(
@@ -458,7 +460,7 @@ class _IncompleteEventNotice extends StatelessWidget {
             child: Text(
               'Este evento tiene informacion incompleta. Algunos campos pueden aparecer como no disponibles.',
               style: TextStyle(
-                color: EventsListView.ink.withAlpha(205),
+                color: campusInk.withAlpha(205),
                 fontSize: 12,
                 fontWeight: FontWeight.w700,
                 height: 1.3,
@@ -502,17 +504,7 @@ String formatEventTime(DateTime? start) {
   return '$hour:$minute';
 }
 
-String _groupSubtitle(EventSummary event) {
-  final parts = [
-    _titleCaseOrFallback(event.groupCategory, 'Categoria no disponible'),
-    event.groupIsOfficial == true ? 'Oficial' : 'No oficial',
-  ];
-  return parts.join(' · ');
-}
 
-String _userSubtitle(EventSummary event) {
-  return event.organizerCareer ?? event.organizerEmail ?? 'Usuario comunitario';
-}
 
 String _titleCaseOrFallback(String? value, String fallback) {
   final text = value?.trim();
@@ -528,9 +520,6 @@ String _titleCaseOrFallback(String? value, String fallback) {
       .join(' ');
 }
 
-String _calendarTitle(DateTime date) {
-  return '${_monthLabel(date.month)} ${date.year}';
-}
 
 String _monthLabel(int month) {
   return switch (month) {
@@ -550,18 +539,6 @@ String _monthLabel(int month) {
   };
 }
 
-String _weekdayLabel(DateTime date) {
-  return switch (date.weekday) {
-    DateTime.monday => 'Lun',
-    DateTime.tuesday => 'Mar',
-    DateTime.wednesday => 'Mie',
-    DateTime.thursday => 'Jue',
-    DateTime.friday => 'Vie',
-    DateTime.saturday => 'Sab',
-    DateTime.sunday => 'Dom',
-    _ => '',
-  };
-}
 
 String shortEventDate(DateTime date) {
   return '${date.day.toString().padLeft(2, '0')}/'
@@ -585,8 +562,8 @@ Color _eventColor(int? eventTypeId) {
     2 => const Color(0xFF8B4C9D),
     3 => const Color(0xFF2E7D32),
     4 => const Color(0xFFC2410C),
-    5 => EventsListView.ink,
-    _ => EventsListView.ink,
+    5 => campusInk,
+    _ => campusInk,
   };
 }
 
@@ -609,11 +586,11 @@ class _DetailInfoRow extends StatelessWidget {
       decoration: BoxDecoration(
         color: Colors.white.withAlpha(238),
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: EventsListView.ink.withAlpha(18)),
+        border: Border.all(color: campusInk.withAlpha(18)),
       ),
       child: Row(
         children: [
-          Icon(icon, color: EventsListView.ink, size: 20),
+          Icon(icon, color: campusInk, size: 20),
           const SizedBox(width: 12),
           Expanded(
             child: Column(
@@ -622,7 +599,7 @@ class _DetailInfoRow extends StatelessWidget {
                 Text(
                   title,
                   style: TextStyle(
-                    color: EventsListView.ink.withAlpha(170),
+                    color: campusInk.withAlpha(170),
                     fontWeight: FontWeight.w700,
                   ),
                 ),
@@ -630,7 +607,7 @@ class _DetailInfoRow extends StatelessWidget {
                 Text(
                   value,
                   style: const TextStyle(
-                    color: EventsListView.ink,
+                    color: campusInk,
                     fontWeight: FontWeight.w800,
                   ),
                 ),

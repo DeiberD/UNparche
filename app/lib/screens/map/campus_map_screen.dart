@@ -1,12 +1,15 @@
 import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import '../../models/event_api_exception.dart';
+import '../../models/event_filters.dart';
+import '../../widgets/map/map_filter_bottom_sheet.dart';
+
 import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart';
 
 import '../../services/event_api_client.dart';
 import '../../models/event_summary.dart';
 import '../../models/event_scopes.dart';
-import '../../models/group_summary.dart';
 import '../../event_cluster_data.dart';
 import '../profile/profile_screen.dart';
 import '../events/events_list_view.dart';
@@ -14,7 +17,6 @@ import '../events/event_detail_screen.dart';
 import '../groups/view_groups_screen.dart';
 import '../../state/auth_state.dart';
 import '../auth/login_screen.dart';
-import '../../widgets/map/map_filter_bottom_sheet.dart';
 import '../../widgets/common/bottom_nav_bar.dart';
 import '../events/create_event_screen.dart';
 import '../../theme/campus_colors.dart';
@@ -22,59 +24,9 @@ import '../../theme/campus_colors.dart';
 const _mapboxAccessToken = String.fromEnvironment('ACCESS_TOKEN');
 
 
-class EventFilters {
-  const EventFilters({this.date, this.eventTypeId, this.groupId});
 
-  final DateTime? date;
-  final int? eventTypeId;
-  final int? groupId;
 
-  bool get hasActiveFilters =>
-      date != null || eventTypeId != null || groupId != null;
 
-  EventFilters copyWith({
-    DateTime? date,
-    int? eventTypeId,
-    int? groupId,
-    bool clearDate = false,
-    bool clearEventType = false,
-    bool clearGroup = false,
-  }) {
-    return EventFilters(
-      date: clearDate ? null : date ?? this.date,
-      eventTypeId: clearEventType ? null : eventTypeId ?? this.eventTypeId,
-      groupId: clearGroup ? null : groupId ?? this.groupId,
-    );
-  }
-}
-
-String _eventTypeLabel(int? eventTypeId) {
-  return switch (eventTypeId) {
-    1 => 'Academico',
-    2 => 'Cultural',
-    3 => 'Deportivo',
-    4 => 'Social',
-    5 => 'Otro',
-    _ => 'Categoria',
-  };
-}
-
-String _shortDate(DateTime date) {
-  return '${date.day.toString().padLeft(2, '0')}/'
-      '${date.month.toString().padLeft(2, '0')}';
-}
-
-void main() {
-  WidgetsFlutterBinding.ensureInitialized();
-
-  if (_mapboxAccessToken.isNotEmpty) {
-    MapboxOptions.setAccessToken(_mapboxAccessToken);
-  }
-
-  final authNotifier = AuthNotifier();
-
-  runApp(AuthProvider(notifier: authNotifier, child: const UNparcheApp()));
-}
 
 class CampusMapScreen extends StatefulWidget {
   const CampusMapScreen({super.key});
@@ -338,7 +290,7 @@ class _CampusMapScreenState extends State<CampusMapScreen> {
     final selected = await showModalBottomSheet<int?>(
       context: context,
       backgroundColor: campusBackground,
-      builder: (_) => const _EventTypeFilterSheet(),
+      builder: (_) => const EventTypeFilterSheet(),
     );
 
     if (!mounted) {
@@ -356,7 +308,7 @@ class _CampusMapScreenState extends State<CampusMapScreen> {
     final selected = await showModalBottomSheet<int?>(
       context: context,
       backgroundColor: campusBackground,
-      builder: (_) => _GroupFilterSheet(groupIds: _availableGroupIds),
+      builder: (_) => GroupFilterSheet(groupIds: _availableGroupIds),
     );
 
     if (!mounted) {

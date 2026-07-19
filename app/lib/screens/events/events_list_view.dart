@@ -1,13 +1,9 @@
 import 'package:flutter/material.dart';
-import '../../services/event_api_client.dart';
 import '../../models/event_summary.dart';
 import '../../models/event_scopes.dart';
-import '../../state/auth_state.dart';
 import '../../widgets/events/event_calendar_strip.dart';
 import '../../widgets/events/event_list_tile.dart';
 import '../../theme/campus_colors.dart';
-import '../../widgets/events/event_calendar_strip.dart';
-import '../../widgets/events/event_list_tile.dart';
 class EventsListView extends StatelessWidget {
   const EventsListView({
     super.key,
@@ -101,7 +97,7 @@ class EventsListView extends StatelessWidget {
               },
             ),
             const SizedBox(height: 16),
-            _EventCalendarStrip(
+            EventCalendarStrip(
               events: calendarEvents,
               selectedDate: selectedDate,
               timeScope: timeScope,
@@ -160,17 +156,17 @@ class _ListStateMessage extends StatelessWidget {
       decoration: BoxDecoration(
         color: Colors.white.withAlpha(238),
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: EventsListView.ink.withAlpha(20)),
+        border: Border.all(color: campusInk.withAlpha(20)),
       ),
       child: Column(
         children: [
-          Icon(icon, color: EventsListView.ink, size: 32),
+          Icon(icon, color: campusInk, size: 32),
           const SizedBox(height: 12),
           Text(
             title,
             textAlign: TextAlign.center,
             style: const TextStyle(
-              color: EventsListView.ink,
+              color: campusInk,
               fontSize: 18,
               fontWeight: FontWeight.w800,
             ),
@@ -180,7 +176,7 @@ class _ListStateMessage extends StatelessWidget {
             message,
             textAlign: TextAlign.center,
             style: TextStyle(
-              color: EventsListView.ink.withAlpha(170),
+              color: campusInk.withAlpha(170),
               fontSize: 13,
               height: 1.3,
             ),

@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import '../../state/auth_state.dart';
 import '../../models/event_summary.dart';
 import '../../flutter_chat/chat_message.dart';
 import '../../flutter_chat/chat_socket_client.dart';
@@ -144,10 +145,10 @@ class _EventChatScreenState extends State<EventChatScreen> {
         : widget.event.title.trim();
 
     return Scaffold(
-      backgroundColor: EventsListView.background,
+      backgroundColor: campusBackground,
       appBar: AppBar(
-        backgroundColor: EventsListView.background,
-        foregroundColor: EventsListView.ink,
+        backgroundColor: campusBackground,
+        foregroundColor: campusInk,
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -157,7 +158,7 @@ class _EventChatScreenState extends State<EventChatScreen> {
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
-                color: EventsListView.ink.withAlpha(170),
+                color: campusInk.withAlpha(170),
                 fontSize: 12,
                 fontWeight: FontWeight.w700,
               ),
@@ -191,7 +192,7 @@ class _EventChatScreenState extends State<EventChatScreen> {
                   _statusMessage!,
                   textAlign: TextAlign.center,
                   style: TextStyle(
-                    color: EventsListView.ink.withAlpha(150),
+                    color: campusInk.withAlpha(150),
                     fontSize: 12,
                     fontWeight: FontWeight.w700,
                   ),
@@ -224,7 +225,7 @@ class _EmptyChatMessage extends StatelessWidget {
               'Todavia no hay mensajes. Se el primero en escribir.',
           textAlign: TextAlign.center,
           style: TextStyle(
-            color: EventsListView.ink.withAlpha(165),
+            color: campusInk.withAlpha(165),
             fontSize: 14,
             fontWeight: FontWeight.w700,
             height: 1.35,
@@ -246,8 +247,8 @@ class _ChatBubble extends StatelessWidget {
     final alignment = isMine
         ? CrossAxisAlignment.end
         : CrossAxisAlignment.start;
-    final bubbleColor = isMine ? EventsListView.ink : Colors.white;
-    final textColor = isMine ? Colors.white : EventsListView.ink;
+    final bubbleColor = isMine ? campusInk : Colors.white;
+    final textColor = isMine ? Colors.white : campusInk;
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
@@ -259,7 +260,7 @@ class _ChatBubble extends StatelessWidget {
             child: Text(
               message.nickname,
               style: TextStyle(
-                color: EventsListView.ink.withAlpha(150),
+                color: campusInk.withAlpha(150),
                 fontSize: 11,
                 fontWeight: FontWeight.w800,
               ),
@@ -283,10 +284,10 @@ class _ChatBubble extends StatelessWidget {
                 ),
                 border: isMine
                     ? null
-                    : Border.all(color: EventsListView.ink.withAlpha(18)),
+                    : Border.all(color: campusInk.withAlpha(18)),
                 boxShadow: [
                   BoxShadow(
-                    color: EventsListView.ink.withAlpha(12),
+                    color: campusInk.withAlpha(12),
                     blurRadius: 14,
                     offset: const Offset(0, 6),
                   ),
@@ -329,10 +330,10 @@ class _ChatInputBar extends StatelessWidget {
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(28),
-          border: Border.all(color: EventsListView.ink.withAlpha(22)),
+          border: Border.all(color: campusInk.withAlpha(22)),
           boxShadow: [
             BoxShadow(
-              color: EventsListView.ink.withAlpha(14),
+              color: campusInk.withAlpha(14),
               blurRadius: 20,
               offset: const Offset(0, 8),
             ),
@@ -352,12 +353,12 @@ class _ChatInputBar extends StatelessWidget {
                   hintText: enabled ? 'Escribe un mensaje...' : 'Conectando...',
                   border: InputBorder.none,
                   hintStyle: TextStyle(
-                    color: EventsListView.ink.withAlpha(115),
+                    color: campusInk.withAlpha(115),
                     fontWeight: FontWeight.w600,
                   ),
                 ),
                 style: const TextStyle(
-                  color: EventsListView.ink,
+                  color: campusInk,
                   fontSize: 15,
                   fontWeight: FontWeight.w700,
                 ),
@@ -387,8 +388,8 @@ class _SendButton extends StatelessWidget {
         onPressed: enabled ? onPressed : null,
         style: FilledButton.styleFrom(
           padding: EdgeInsets.zero,
-          backgroundColor: EventsListView.ink,
-          disabledBackgroundColor: EventsListView.ink.withAlpha(55),
+          backgroundColor: campusInk,
+          disabledBackgroundColor: campusInk.withAlpha(55),
           shape: const CircleBorder(),
         ),
         child: const _SendArrowIcon(),

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
-import '../../models/event_summary.dart';
 import '../../theme/campus_colors.dart';
+import '../../widgets/events/event_helpers.dart';
+import '../../models/event_summary.dart';
 class EventOrganizerDetailScreen extends StatelessWidget {
   const EventOrganizerDetailScreen({super.key, required this.event});
 
@@ -10,10 +11,10 @@ class EventOrganizerDetailScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final isGroup = event.belongsToGroup;
     return Scaffold(
-      backgroundColor: EventsListView.background,
+      backgroundColor: campusBackground,
       appBar: AppBar(
-        backgroundColor: EventsListView.background,
-        foregroundColor: EventsListView.ink,
+        backgroundColor: campusBackground,
+        foregroundColor: campusInk,
         title: Text(
           isGroup ? 'Informacion del grupo' : 'Informacion del usuario',
           style: const TextStyle(fontWeight: FontWeight.w800),
@@ -26,21 +27,21 @@ class EventOrganizerDetailScreen extends StatelessWidget {
             Container(
               padding: const EdgeInsets.all(18),
               decoration: BoxDecoration(
-                color: EventsListView.surface,
+                color: campusSurface,
                 borderRadius: BorderRadius.circular(18),
-                border: Border.all(color: EventsListView.ink.withAlpha(24)),
+                border: Border.all(color: campusInk.withAlpha(24)),
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   CircleAvatar(
                     radius: 26,
-                    backgroundColor: _eventColor(
+                    backgroundColor: eventColor(
                       event.eventTypeId,
                     ).withAlpha(36),
                     child: Icon(
                       isGroup ? Icons.groups_outlined : Icons.person_outline,
-                      color: _eventColor(event.eventTypeId),
+                      color: eventColor(event.eventTypeId),
                     ),
                   ),
                   const SizedBox(height: 14),
@@ -49,16 +50,16 @@ class EventOrganizerDetailScreen extends StatelessWidget {
                         ? event.groupName ?? 'Grupo sin nombre'
                         : event.organizerName ?? 'Usuario sin nombre publico',
                     style: const TextStyle(
-                      color: EventsListView.ink,
+                      color: campusInk,
                       fontSize: 24,
                       fontWeight: FontWeight.w900,
                     ),
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    isGroup ? _groupSubtitle(event) : _userSubtitle(event),
+                    isGroup ? groupSubtitle(event) : userSubtitle(event),
                     style: TextStyle(
-                      color: EventsListView.ink.withAlpha(175),
+                      color: campusInk.withAlpha(175),
                       fontSize: 13,
                       fontWeight: FontWeight.w700,
                     ),
@@ -71,7 +72,7 @@ class EventOrganizerDetailScreen extends StatelessWidget {
                         : event.organizerInfo ??
                               'Este usuario no tiene informacion publica adicional.',
                     style: TextStyle(
-                      color: EventsListView.ink.withAlpha(190),
+                      color: campusInk.withAlpha(190),
                       fontSize: 14,
                       height: 1.35,
                     ),
@@ -84,7 +85,7 @@ class EventOrganizerDetailScreen extends StatelessWidget {
               _DetailInfoRow(
                 icon: Icons.category_outlined,
                 title: 'Categoria',
-                value: _titleCaseOrFallback(
+                value: titleCaseOrFallback(
                   event.groupCategory,
                   'Sin categoria',
                 ),
@@ -97,7 +98,7 @@ class EventOrganizerDetailScreen extends StatelessWidget {
               _DetailInfoRow(
                 icon: Icons.fact_check_outlined,
                 title: 'Verificacion',
-                value: _titleCaseOrFallback(
+                value: titleCaseOrFallback(
                   event.groupVerificationStatus,
                   'Sin verificar',
                 ),
@@ -126,8 +127,8 @@ class EventOrganizerDetailScreen extends StatelessWidget {
   }
 }
 
-class _OrganizerCard extends StatelessWidget {
-  const _OrganizerCard({required this.event});
+class OrganizerCard extends StatelessWidget {
+  const OrganizerCard({required this.event});
 
   final EventSummary event;
 
@@ -148,13 +149,13 @@ class _OrganizerCard extends StatelessWidget {
           padding: const EdgeInsets.all(14),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: EventsListView.ink.withAlpha(18)),
+            border: Border.all(color: campusInk.withAlpha(18)),
           ),
           child: Row(
             children: [
               Icon(
                 isGroup ? Icons.groups_outlined : Icons.person_outline,
-                color: EventsListView.ink,
+                color: campusInk,
               ),
               const SizedBox(width: 12),
               Expanded(
@@ -164,7 +165,7 @@ class _OrganizerCard extends StatelessWidget {
                     Text(
                       isGroup ? 'Grupo organizador' : 'Usuario organizador',
                       style: TextStyle(
-                        color: EventsListView.ink.withAlpha(165),
+                        color: campusInk.withAlpha(165),
                         fontWeight: FontWeight.w700,
                         fontSize: 12,
                       ),
@@ -175,14 +176,14 @@ class _OrganizerCard extends StatelessWidget {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
-                        color: EventsListView.ink,
+                        color: campusInk,
                         fontWeight: FontWeight.w900,
                       ),
                     ),
                   ],
                 ),
               ),
-              const Icon(Icons.chevron_right, color: EventsListView.ink),
+              const Icon(Icons.chevron_right, color: campusInk),
             ],
           ),
         ),
@@ -191,3 +192,57 @@ class _OrganizerCard extends StatelessWidget {
   }
 }
 
+
+
+class _DetailInfoRow extends StatelessWidget {
+  const _DetailInfoRow({
+    required this.icon,
+    required this.title,
+    required this.value,
+  });
+
+  final IconData icon;
+  final String title;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: Colors.white.withAlpha(238),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: campusInk.withAlpha(18)),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, color: campusInk, size: 20),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: TextStyle(
+                    color: campusInk.withAlpha(170),
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  value,
+                  style: const TextStyle(
+                    color: campusInk,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
