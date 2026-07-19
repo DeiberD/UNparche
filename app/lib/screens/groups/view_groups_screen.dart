@@ -5,7 +5,7 @@ import '../../models/group_summary.dart';
 import '../../models/group_invitation.dart';
 import '../../models/group_api_exception.dart';
 import '../../state/auth_state.dart';
-import '../../login_screen.dart';
+import '../auth/login_screen.dart';
 import 'create_group_screen.dart';
 import '../../widgets/groups/group_list_tile.dart';
 

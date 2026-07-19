@@ -12,7 +12,7 @@ import 'screens/events/events_list_view.dart';
 import 'screens/events/event_detail_screen.dart';
 import 'screens/groups/view_groups_screen.dart';
 import 'state/auth_state.dart';
-import 'login_screen.dart';
+import 'screens/auth/login_screen.dart';
 
 const _mapboxAccessToken = String.fromEnvironment('ACCESS_TOKEN');
 
