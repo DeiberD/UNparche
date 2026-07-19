@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import '../../services/event_api_client.dart';
 import '../../models/event_summary.dart';
+import '../../models/event_scopes.dart';
 import '../../theme/campus_colors.dart';
 abstract class _CalendarSelectionStrategy {
   const _CalendarSelectionStrategy();

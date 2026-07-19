@@ -5,6 +5,7 @@ import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart';
 
 import '../../services/event_api_client.dart';
 import '../../models/event_summary.dart';
+import '../../models/event_scopes.dart';
 import '../../models/group_summary.dart';
 import '../../event_cluster_data.dart';
 import '../profile/profile_screen.dart';

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../services/event_api_client.dart';
 import '../../models/event_summary.dart';
+import '../../models/event_scopes.dart';
 import '../../state/auth_state.dart';
 import '../../widgets/events/event_calendar_strip.dart';
 import '../../widgets/events/event_list_tile.dart';
