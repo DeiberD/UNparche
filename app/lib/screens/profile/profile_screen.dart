@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'state/auth_state.dart';
+import '../../state/auth_state.dart';
 
 /// User profile screen
 ///

@@ -7,7 +7,7 @@ import 'create_event_screen.dart';
 import 'services/event_api_client.dart';
 import 'models/event_summary.dart';
 import 'event_cluster_data.dart';
-import 'profile_screen.dart';
+import 'screens/profile/profile_screen.dart';
 import 'view_events_screen.dart';
 import 'view_groups_screen.dart';
 import 'state/auth_state.dart';
