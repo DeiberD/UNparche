@@ -135,6 +135,7 @@ class CampusMapScreen extends StatefulWidget {
 class _CampusMapScreenState extends State<CampusMapScreen> {
   final _eventApiClient = EventApiClient();
   List<EventSummary> _allEvents = [];
+  List<EventSummary> _attendedEventHistory = [];
   _HomeTab _selectedTab = _HomeTab.events;
   EventFilters _filters = const EventFilters();
   EventTimeScope _eventTimeScope = EventTimeScope.future;
@@ -142,11 +143,17 @@ class _CampusMapScreenState extends State<CampusMapScreen> {
   EventSummary? _focusedEvent;
   bool _isLoadingEvents = false;
   String? _eventsError;
+  bool _isLoadingHistory = false;
+  String? _historyError;
 
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _loadVisibleEvents());
+    WidgetsBinding.instance.addPostFrameCallback((_) => _refreshEventData());
+  }
+
+  Future<void> _refreshEventData() async {
+    await Future.wait([_loadVisibleEvents(), _loadAttendanceHistory()]);
   }
 
   Future<void> _loadVisibleEvents() async {
@@ -199,6 +206,43 @@ class _CampusMapScreenState extends State<CampusMapScreen> {
     } finally {
       if (mounted) {
         setState(() => _isLoadingEvents = false);
+      }
+    }
+  }
+
+  Future<void> _loadAttendanceHistory() async {
+    if (_isLoadingHistory) {
+      return;
+    }
+
+    setState(() {
+      _isLoadingHistory = true;
+      _historyError = null;
+    });
+
+    try {
+      final events = await _eventApiClient.fetchAttendanceHistory(
+        userId: AuthProvider.of(context).value.currentUser!.id,
+      );
+
+      if (!mounted) {
+        return;
+      }
+
+      setState(() => _attendedEventHistory = events);
+    } on EventApiException catch (error) {
+      if (mounted) {
+        setState(() => _historyError = error.message);
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(
+          () => _historyError = 'No se pudo cargar el historial de eventos.',
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isLoadingHistory = false);
       }
     }
   }
@@ -281,19 +325,26 @@ class _CampusMapScreenState extends State<CampusMapScreen> {
 
   List<EventSummary> _eventsMatchingFilters({required bool includeDate}) {
     final now = DateTime.now();
-    return _allEvents.where((event) {
+    final source = _eventTimeScope == EventTimeScope.past
+        ? _attendedEventHistory
+        : _allEvents;
+
+    return source.where((event) {
       if (!_matchesTimeScope(event, now)) {
         return false;
       }
 
-      if (_eventAttendanceScope == EventAttendanceScope.confirmed &&
-          !event.hasConfirmedAttendance) {
-        return false;
-      }
+      if (_eventTimeScope == EventTimeScope.future) {
+        if (_eventAttendanceScope == EventAttendanceScope.confirmed &&
+            !event.hasConfirmedAttendance) {
+          return false;
+        }
 
-      if (_eventAttendanceScope == EventAttendanceScope.created &&
-          event.organizerId != AuthProvider.of(context).value.currentUser!.id) {
-        return false;
+        if (_eventAttendanceScope == EventAttendanceScope.created &&
+            event.organizerId !=
+                AuthProvider.of(context).value.currentUser!.id) {
+          return false;
+        }
       }
 
       final date = _filters.date;
@@ -320,7 +371,7 @@ class _CampusMapScreenState extends State<CampusMapScreen> {
 
   bool _matchesTimeScope(EventSummary event, DateTime now) {
     final eventStart = event.start;
-    if (!event.isPublic || eventStart == null) {
+    if (eventStart == null) {
       return false;
     }
 
@@ -329,21 +380,23 @@ class _CampusMapScreenState extends State<CampusMapScreen> {
 
     return switch (_eventTimeScope) {
       EventTimeScope.future =>
-        event.isActive &&
+        event.isPublic &&
+            event.isActive &&
             !localStart.isBefore(now) &&
             !localStart.isAfter(next7Days),
       EventTimeScope.past =>
-        event.status != 'CANCELADO' && localStart.isBefore(now),
+        event.hasConfirmedAttendance &&
+            event.status != 'CANCELADO' &&
+            (event.end ?? eventStart).toLocal().isBefore(now),
     };
   }
 
   List<int> get _availableGroupIds {
+    final source = _eventTimeScope == EventTimeScope.past
+        ? _attendedEventHistory
+        : _allEvents;
     final groupIds =
-        _allEvents
-            .map((event) => event.groupId)
-            .whereType<int>()
-            .toSet()
-            .toList()
+        source.map((event) => event.groupId).whereType<int>().toSet().toList()
           ..sort();
     return groupIds;
   }
@@ -422,6 +475,16 @@ class _CampusMapScreenState extends State<CampusMapScreen> {
     setState(() => _filters = const EventFilters());
   }
 
+  void _selectHomeTab(_HomeTab tab) {
+    setState(() {
+      _selectedTab = tab;
+      if (tab == _HomeTab.map && _eventTimeScope == EventTimeScope.past) {
+        _eventTimeScope = EventTimeScope.future;
+        _filters = _filters.copyWith(clearDate: true);
+      }
+    });
+  }
+
   Future<void> _openEventDetails(EventSummary event) async {
     final shouldOpenLocation = await Navigator.of(context).push<bool>(
       MaterialPageRoute(
@@ -474,6 +537,12 @@ class _CampusMapScreenState extends State<CampusMapScreen> {
   Widget build(BuildContext context) {
     final filteredEvents = _filteredEvents;
     final showEventControls = _selectedTab != _HomeTab.groups;
+    final currentEventsError = _eventTimeScope == EventTimeScope.past
+        ? _historyError
+        : _eventsError;
+    final currentEventsLoading = _eventTimeScope == EventTimeScope.past
+        ? _isLoadingHistory
+        : _isLoadingEvents;
 
     return Scaffold(
       body: SafeArea(
@@ -494,9 +563,9 @@ class _CampusMapScreenState extends State<CampusMapScreen> {
                   calendarEvents: _eventsForCalendar,
                   selectedDate: _filters.date,
                   timeScope: _eventTimeScope,
-                  isLoading: _isLoadingEvents,
-                  errorMessage: _eventsError,
-                  onRefresh: _loadVisibleEvents,
+                  isLoading: currentEventsLoading,
+                  errorMessage: currentEventsError,
+                  onRefresh: _refreshEventData,
                   onEventTap: _openEventDetails,
                   onDateSelected: (date) {
                     setState(() {
@@ -538,14 +607,15 @@ class _CampusMapScreenState extends State<CampusMapScreen> {
                       : null,
                 ),
               ),
-            if (showEventControls && (_isLoadingEvents || _eventsError != null))
+            if (showEventControls &&
+                (currentEventsLoading || currentEventsError != null))
               Positioned(
                 left: 18,
                 right: 18,
                 top: 134,
                 child: MapStatusMessage(
-                  message: _eventsError ?? 'Cargando eventos...',
-                  hasError: _eventsError != null,
+                  message: currentEventsError ?? 'Cargando eventos...',
+                  hasError: currentEventsError != null,
                 ),
               ),
             Positioned(
@@ -554,7 +624,7 @@ class _CampusMapScreenState extends State<CampusMapScreen> {
               bottom: 12,
               child: _BottomNavigationMock(
                 selectedTab: _selectedTab,
-                onTabSelected: (tab) => setState(() => _selectedTab = tab),
+                onTabSelected: _selectHomeTab,
               ),
             ),
             if (showEventControls)
@@ -579,7 +649,7 @@ class _CampusMapScreenState extends State<CampusMapScreen> {
                   tooltip: 'Actualizar eventos',
                   backgroundColor: CampusMapScreen._surface,
                   foregroundColor: CampusMapScreen._ink,
-                  onPressed: _loadVisibleEvents,
+                  onPressed: _refreshEventData,
                   child: const Icon(Icons.refresh),
                 ),
               ),

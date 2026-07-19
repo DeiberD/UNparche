@@ -172,6 +172,7 @@ class EventsListView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isHistory = timeScope == EventTimeScope.past;
     return Container(
       color: background,
       child: RefreshIndicator(
@@ -180,9 +181,9 @@ class EventsListView extends StatelessWidget {
         child: ListView(
           padding: const EdgeInsets.fromLTRB(16, 154, 16, 112),
           children: [
-            const Text(
-              'Eventos disponibles',
-              style: TextStyle(
+            Text(
+              isHistory ? 'Historial de eventos' : 'Eventos disponibles',
+              style: const TextStyle(
                 color: ink,
                 fontSize: 24,
                 fontWeight: FontWeight.w800,
@@ -190,43 +191,51 @@ class EventsListView extends StatelessWidget {
             ),
             const SizedBox(height: 6),
             Text(
-              'Actividades publicas ordenadas por fecha de inicio.',
+              isHistory
+                  ? 'Actividades pasadas en las que confirmaste asistencia.'
+                  : 'Actividades publicas ordenadas por fecha de inicio.',
               style: TextStyle(
                 color: ink.withAlpha(180),
                 fontSize: 13,
                 fontWeight: FontWeight.w600,
               ),
             ),
-            const SizedBox(height: 16),
-            SegmentedButton<EventAttendanceScope>(
-              segments: const [
-                ButtonSegment(
-                  value: EventAttendanceScope.all,
-                  label: FittedBox(
-                    fit: BoxFit.scaleDown,
-                    child: Text('Todos', maxLines: 1, softWrap: false),
+            if (!isHistory) ...[
+              const SizedBox(height: 16),
+              SegmentedButton<EventAttendanceScope>(
+                segments: const [
+                  ButtonSegment(
+                    value: EventAttendanceScope.all,
+                    label: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Text('Todos', maxLines: 1, softWrap: false),
+                    ),
                   ),
-                ),
-                ButtonSegment(
-                  value: EventAttendanceScope.confirmed,
-                  label: FittedBox(
-                    fit: BoxFit.scaleDown,
-                    child: Text('Confirmados', maxLines: 1, softWrap: false),
+                  ButtonSegment(
+                    value: EventAttendanceScope.confirmed,
+                    label: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Text('Confirmados', maxLines: 1, softWrap: false),
+                    ),
                   ),
-                ),
-                ButtonSegment(
-                  value: EventAttendanceScope.created,
-                  label: FittedBox(
-                    fit: BoxFit.scaleDown,
-                    child: Text('Creados por mí', maxLines: 1, softWrap: false),
+                  ButtonSegment(
+                    value: EventAttendanceScope.created,
+                    label: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Text(
+                        'Creados por mí',
+                        maxLines: 1,
+                        softWrap: false,
+                      ),
+                    ),
                   ),
-                ),
-              ],
-              selected: {attendanceScope},
-              onSelectionChanged: (selection) {
-                onAttendanceScopeChanged(selection.first);
-              },
-            ),
+                ],
+                selected: {attendanceScope},
+                onSelectionChanged: (selection) {
+                  onAttendanceScopeChanged(selection.first);
+                },
+              ),
+            ],
             const SizedBox(height: 16),
             _EventCalendarStrip(
               events: calendarEvents,
@@ -245,10 +254,14 @@ class EventsListView extends StatelessWidget {
             else if (!isLoading && events.isEmpty)
               _ListStateMessage(
                 icon: Icons.event_busy_outlined,
-                title: selectedDate == null
+                title: isHistory
+                    ? 'No hay eventos en tu historial'
+                    : selectedDate == null
                     ? 'No hay eventos disponibles'
                     : 'No hay eventos este dia',
-                message: selectedDate == null
+                message: isHistory
+                    ? 'Cuando asistas a un evento, podras recordarlo aqui.'
+                    : selectedDate == null
                     ? 'Cuando existan eventos publicos, apareceran aqui.'
                     : 'Selecciona otro dia o limpia el filtro de fecha.',
               )
@@ -372,7 +385,7 @@ class _EventCalendarStripState extends State<_EventCalendarStrip> {
               const SizedBox(width: 8),
               Expanded(
                 child: _ScopeButton(
-                  label: 'Pasados',
+                  label: 'Historial',
                   icon: Icons.history,
                   selected: widget.timeScope == EventTimeScope.past,
                   onTap: () => widget.onTimeScopeChanged(EventTimeScope.past),
@@ -926,6 +939,10 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  if (event.isArchived) ...[
+                    const _ArchivedEventNotice(),
+                    const SizedBox(height: 14),
+                  ],
                   if (!event.hasCompleteRequiredDetails) ...[
                     const _IncompleteEventNotice(),
                     const SizedBox(height: 14),
@@ -1019,7 +1036,8 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
                   ? _toggleAttendance
                   : null,
             ),
-            if (event.organizerId == widget.currentUserId) ...[
+            if (!event.isArchived &&
+                event.organizerId == widget.currentUserId) ...[
               const SizedBox(height: 12),
               OutlinedButton.icon(
                 onPressed: _isDeleting ? null : _confirmDelete,
@@ -1044,7 +1062,7 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
                 children: [
                   Expanded(
                     child: FilledButton.icon(
-                      onPressed: event.hasLocation
+                      onPressed: event.hasLocation && !event.isArchived
                           ? () => Navigator.of(context).pop(true)
                           : null,
                       icon: const Icon(Icons.map_outlined),
@@ -1904,6 +1922,40 @@ class _OrganizerCard extends StatelessWidget {
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _ArchivedEventNotice extends StatelessWidget {
+  const _ArchivedEventNotice();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: EventsListView.accent.withAlpha(150),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: EventsListView.ink.withAlpha(35)),
+      ),
+      child: const Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(Icons.inventory_2_outlined, color: EventsListView.ink, size: 20),
+          SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              'Este evento fue archivado por su ciclo de vida. Se conserva como parte de tu historial.',
+              style: TextStyle(
+                color: EventsListView.ink,
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+                height: 1.3,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
