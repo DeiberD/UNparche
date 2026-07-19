@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
-import 'services/auth_api_client.dart';
-import 'models/user.dart';
+import '../services/auth_api_client.dart';
+import '../models/user.dart';
 
 class AuthState {
   final User? currentUser;

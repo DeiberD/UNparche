@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart' hide Size;
 
 import 'campus_location_map_facade.dart';
-import 'location_picker_state.dart';
-export 'location_picker_state.dart' show LocationSelection;
+import 'state/location_picker_state.dart';
+export 'state/location_picker_state.dart' show LocationSelection;
 
 /// Mapbox screen used to choose the exact campus location of an event.
 ///

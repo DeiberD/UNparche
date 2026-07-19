@@ -4,7 +4,7 @@ import 'services/group_api_client.dart';
 import 'models/group_summary.dart';
 import 'models/group_invitation.dart';
 import 'models/create_group_request.dart';
-import 'auth_state.dart';
+import 'state/auth_state.dart';
 import 'login_screen.dart';
 
 class GroupsScreen extends StatefulWidget {
