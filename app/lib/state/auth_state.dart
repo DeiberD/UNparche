@@ -32,7 +32,7 @@ class AuthNotifier extends ValueNotifier<AuthState> {
     _init();
   }
 
-  final _storage = const FlutterSecureStorage();
+  final _storage = const FlutterSecureStorage(aOptions: AndroidOptions(encryptedSharedPreferences: true));
   final _apiClient = AuthApiClient();
 
   Future<void> _init() async {

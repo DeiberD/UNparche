@@ -1,10 +1,27 @@
 import 'package:flutter/material.dart';
+import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart';
+
 import 'theme/campus_colors.dart';
 
 import 'state/auth_state.dart';
 import 'screens/auth/login_screen.dart';
 import 'screens/map/campus_map_screen.dart';
 
+
+
+const _mapboxAccessToken = String.fromEnvironment('ACCESS_TOKEN');
+
+void main() {
+  WidgetsFlutterBinding.ensureInitialized();
+
+  if (_mapboxAccessToken.isNotEmpty) {
+    MapboxOptions.setAccessToken(_mapboxAccessToken);
+  }
+
+  final authNotifier = AuthNotifier();
+
+  runApp(AuthProvider(notifier: authNotifier, child: const UNparcheApp()));
+}
 
 class UNparcheApp extends StatelessWidget {
   const UNparcheApp({super.key});
