@@ -5,6 +5,7 @@ type AppEnv = Env & {
 	unparche_db: D1Database;
 	CHAT_INTERNAL_TOKEN?: string;
 	JWT_SECRET: string;
+	GOOGLE_WEB_CLIENT_ID?: string;
 };
 
 type CrearEventoBody = {
@@ -467,15 +468,23 @@ export default {
 			
 			const idToken = body.id_token;
 			if (!idToken) return json({ ok: false, error: "Token de Google requerido" }, { status: 400 });
+			if (!env.GOOGLE_WEB_CLIENT_ID) {
+				return json({ ok: false, error: "Google Sign-In no esta configurado" }, { status: 503 });
+			}
 
 			try {
-				const verifyResp = await fetch(`https://oauth2.googleapis.com/tokeninfo?id_token=${idToken}`);
+				const verifyResp = await fetch(
+					`https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(idToken)}`,
+				);
 				if (!verifyResp.ok) {
 					return json({ ok: false, error: "Token de Google inválido" }, { status: 401 });
 				}
 				const payload: any = await verifyResp.json();
+				if (payload.aud !== env.GOOGLE_WEB_CLIENT_ID || payload.email_verified !== "true") {
+					return json({ ok: false, error: "Token de Google inválido" }, { status: 401 });
+				}
 				
-				const correo_institucional = payload.email;
+				const correo_institucional = typeof payload.email === "string" ? payload.email.toLowerCase() : "";
 				if (!correo_institucional || !correo_institucional.endsWith("@unal.edu.co")) {
 					return json({ ok: false, error: "Debe usar un correo institucional @unal.edu.co" }, { status: 403 });
 				}
