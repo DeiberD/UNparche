@@ -7,6 +7,7 @@ import 'event_organizer_detail_screen.dart';
 import '../../models/event_api_exception.dart';
 import '../chat/event_chat_screen.dart';
 import 'event_attendees_screen.dart';
+import 'event_announcements_section.dart';
 
 class EventDetailScreen extends StatefulWidget {
   const EventDetailScreen({
@@ -31,6 +32,7 @@ class EventDetailScreen extends StatefulWidget {
 class _EventDetailScreenState extends State<EventDetailScreen> {
   late EventSummary _event;
   bool _isUpdatingAttendance = false;
+  bool _isUpdatingNotifications = false;
   bool _isDeleting = false;
 
   @override
@@ -159,11 +161,27 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
             const SizedBox(height: 12),
             OrganizerCard(event: event),
             const SizedBox(height: 12),
+            if (event.id != null) ...[
+              EventAnnouncementsSection(
+                eventId: event.id!,
+                currentUserId: widget.currentUserId,
+                canPublish:
+                    event.isActive &&
+                    event.organizerId == widget.currentUserId,
+                eventApiClient: widget.eventApiClient,
+              ),
+              const SizedBox(height: 12),
+            ],
             _AttendanceCard(
               event: event,
               isUpdating: _isUpdatingAttendance,
+              isUpdatingNotifications: _isUpdatingNotifications,
               onPressed: event.isActive && event.id != null
                   ? _toggleAttendance
+                  : null,
+              onNotificationsChanged:
+                  event.isActive && event.hasConfirmedAttendance
+                  ? _toggleAnnouncementNotifications
                   : null,
             ),
             const SizedBox(height: 12),
@@ -279,7 +297,10 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
           eventId: eventId,
           userId: widget.currentUserId,
         );
-        _updateAttendanceStatus('CANCELADA');
+        _updateAttendanceStatus(
+          'CANCELADA',
+          notificationsEnabled: false,
+        );
         _showAttendanceMessage('Asistencia cancelada.');
       } else {
         await widget.eventApiClient.confirmAttendance(
@@ -297,6 +318,34 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
       if (mounted) {
         setState(() => _isUpdatingAttendance = false);
       }
+    }
+  }
+
+  Future<void> _toggleAnnouncementNotifications(bool enabled) async {
+    final eventId = _event.id;
+    if (eventId == null || _isUpdatingNotifications) return;
+
+    setState(() => _isUpdatingNotifications = true);
+    try {
+      final updated = await widget.eventApiClient
+          .updateAnnouncementNotifications(
+            eventId: eventId,
+            userId: widget.currentUserId,
+            enabled: enabled,
+          );
+      final updatedEvent = _event.copyWith(notificationsEnabled: updated);
+      if (!mounted) return;
+      setState(() => _event = updatedEvent);
+      widget.onAttendanceChanged(updatedEvent);
+      _showAttendanceMessage(
+        updated ? 'Recibiras los anuncios del evento.' : 'Avisos desactivados.',
+      );
+    } on EventApiException catch (error) {
+      _showAttendanceMessage(error.message);
+    } catch (_) {
+      _showAttendanceMessage('No se pudo actualizar la preferencia de avisos.');
+    } finally {
+      if (mounted) setState(() => _isUpdatingNotifications = false);
     }
   }
 
@@ -343,8 +392,14 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
     }
   }
 
-  void _updateAttendanceStatus(String status) {
-    final updatedEvent = _event.copyWith(attendanceStatus: status);
+  void _updateAttendanceStatus(
+    String status, {
+    bool? notificationsEnabled,
+  }) {
+    final updatedEvent = _event.copyWith(
+      attendanceStatus: status,
+      notificationsEnabled: notificationsEnabled,
+    );
     setState(() => _event = updatedEvent);
     widget.onAttendanceChanged(updatedEvent);
   }
@@ -364,12 +419,16 @@ class _AttendanceCard extends StatelessWidget {
   const _AttendanceCard({
     required this.event,
     required this.isUpdating,
+    required this.isUpdatingNotifications,
     required this.onPressed,
+    required this.onNotificationsChanged,
   });
 
   final EventSummary event;
   final bool isUpdating;
+  final bool isUpdatingNotifications;
   final VoidCallback? onPressed;
+  final ValueChanged<bool>? onNotificationsChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -419,6 +478,21 @@ class _AttendanceCard extends StatelessWidget {
               fontWeight: FontWeight.w800,
             ),
           ),
+          if (isConfirmed && onNotificationsChanged != null) ...[
+            const SizedBox(height: 8),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text(
+                'Recibir anuncios',
+                style: TextStyle(fontWeight: FontWeight.w800),
+              ),
+              subtitle: const Text('Avisos cuando el organizador publique.'),
+              value: event.notificationsEnabled,
+              onChanged: isUpdatingNotifications
+                  ? null
+                  : onNotificationsChanged,
+            ),
+          ],
           const SizedBox(height: 12),
           SizedBox(
             height: 48,
