@@ -1,9 +1,14 @@
 import 'package:flutter/material.dart';
 
-import 'group_api_client.dart';
+import '../../services/group_api_client.dart';
+import '../../models/group_summary.dart';
+import '../../models/group_invitation.dart';
+import '../../models/group_api_exception.dart';
+import '../../state/auth_state.dart';
+import '../auth/login_screen.dart';
+import 'create_group_screen.dart';
+import '../../widgets/groups/group_list_tile.dart';
 import 'group_members_screen.dart';
-import 'auth_state.dart';
-import 'login_screen.dart';
 
 class GroupsScreen extends StatefulWidget {
   const GroupsScreen({super.key, this.groupApiClient});
@@ -255,16 +260,13 @@ class _GroupsScreenState extends State<GroupsScreen> {
       context: context,
       builder: (dialogContext) => AlertDialog(
         title: const Text('Eliminar grupo'),
-        content: Text(
-          '¿Seguro que deseas eliminar “${group.name}”? Las membresias e invitaciones del grupo tambien se eliminaran.',
-        ),
+        content: Text('¿Seguro que deseas eliminar “${group.name}”?'),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(dialogContext).pop(false),
             child: const Text('Cancelar'),
           ),
           FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: Colors.red.shade700),
             onPressed: () => Navigator.of(dialogContext).pop(true),
             child: const Text('Eliminar'),
           ),
@@ -275,11 +277,8 @@ class _GroupsScreenState extends State<GroupsScreen> {
     try {
       await _groupApiClient.deleteGroup(groupId: groupId, userId: userId);
       if (!mounted) return;
-      setState(() {
-        _groups = _groups.where((item) => item.id != groupId).toList();
-      });
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Grupo "${group.name}" eliminado.')),
+      setState(
+        () => _groups = _groups.where((item) => item.id != groupId).toList(),
       );
     } on GroupApiException catch (error) {
       if (mounted) {
@@ -441,362 +440,6 @@ class _GroupsScreenState extends State<GroupsScreen> {
                 ),
               ),
           ],
-        ),
-      ),
-    );
-  }
-}
-
-class CreateGroupScreen extends StatefulWidget {
-  const CreateGroupScreen({super.key, this.groupApiClient});
-
-  final GroupApiClient? groupApiClient;
-
-  @override
-  State<CreateGroupScreen> createState() => _CreateGroupScreenState();
-}
-
-class _CreateGroupScreenState extends State<CreateGroupScreen> {
-  final _formKey = GlobalKey<FormState>();
-  final _nameController = TextEditingController();
-  final _descriptionController = TextEditingController();
-  String _category = groupCategories.first;
-  bool _isSaving = false;
-
-  @override
-  void dispose() {
-    _nameController.dispose();
-    _descriptionController.dispose();
-    super.dispose();
-  }
-
-  Future<void> _saveGroup() async {
-    final isValid = _formKey.currentState?.validate() ?? false;
-    if (!isValid || _isSaving) {
-      return;
-    }
-
-    setState(() => _isSaving = true);
-
-    try {
-      final client = widget.groupApiClient ?? GroupApiClient();
-      final group = await client.createGroup(
-        CreateGroupRequest(
-          name: _nameController.text.trim(),
-          description: _descriptionController.text.trim(),
-          category: _category,
-          adminId: AuthProvider.of(context).value.currentUser!.id,
-        ),
-      );
-
-      if (mounted) {
-        Navigator.of(context).pop(group);
-      }
-    } on GroupApiException catch (error) {
-      if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text(error.message)));
-      }
-    } catch (_) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('No se pudo conectar con la API.')),
-        );
-      }
-    } finally {
-      if (mounted) {
-        setState(() => _isSaving = false);
-      }
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: GroupsScreen.background,
-      appBar: AppBar(
-        backgroundColor: GroupsScreen.background,
-        foregroundColor: GroupsScreen.ink,
-        title: const Text(
-          'Nuevo grupo',
-          style: TextStyle(fontWeight: FontWeight.w800),
-        ),
-      ),
-      body: SafeArea(
-        child: Form(
-          key: _formKey,
-          child: ListView(
-            padding: const EdgeInsets.fromLTRB(18, 12, 18, 24),
-            children: [
-              Container(
-                padding: const EdgeInsets.all(18),
-                decoration: BoxDecoration(
-                  color: GroupsScreen.surface,
-                  borderRadius: BorderRadius.circular(18),
-                  border: Border.all(color: GroupsScreen.ink.withAlpha(24)),
-                ),
-                child: const Row(
-                  children: [
-                    CircleAvatar(
-                      backgroundColor: GroupsScreen.accent,
-                      child: Icon(Icons.groups_2_outlined),
-                    ),
-                    SizedBox(width: 12),
-                    Expanded(
-                      child: Text(
-                        'Los grupos creados aqui son no oficiales y quedan sin sello de verificacion.',
-                        style: TextStyle(
-                          color: GroupsScreen.ink,
-                          fontWeight: FontWeight.w700,
-                          height: 1.3,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 18),
-              TextFormField(
-                controller: _nameController,
-                decoration: const InputDecoration(
-                  labelText: 'Nombre del grupo',
-                  hintText: 'Ej. Club de lectura UNAL',
-                ),
-                maxLength: 80,
-                validator: (value) {
-                  if (value == null || value.trim().isEmpty) {
-                    return 'El nombre es obligatorio.';
-                  }
-                  return null;
-                },
-              ),
-              const SizedBox(height: 12),
-              TextFormField(
-                controller: _descriptionController,
-                decoration: const InputDecoration(
-                  labelText: 'Descripcion',
-                  hintText: 'Cuenta que hace el colectivo',
-                ),
-                maxLength: 180,
-                minLines: 4,
-                maxLines: 5,
-              ),
-              const SizedBox(height: 16),
-              const _SectionTitle('Categoria'),
-              const SizedBox(height: 8),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: groupCategories.map((category) {
-                  final selected = _category == category;
-                  return ChoiceChip(
-                    label: Text(groupCategoryLabel(category)),
-                    selected: selected,
-                    selectedColor: GroupsScreen.ink,
-                    labelStyle: TextStyle(
-                      color: selected ? Colors.white : GroupsScreen.ink,
-                      fontWeight: FontWeight.w700,
-                    ),
-                    onSelected: (_) => setState(() => _category = category),
-                  );
-                }).toList(),
-              ),
-              const SizedBox(height: 24),
-              SizedBox(
-                height: 54,
-                child: FilledButton.icon(
-                  onPressed: _isSaving ? null : _saveGroup,
-                  icon: _isSaving
-                      ? const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2.5),
-                        )
-                      : const Icon(Icons.add),
-                  label: Text(_isSaving ? 'Creando...' : 'Crear grupo'),
-                  style: FilledButton.styleFrom(
-                    backgroundColor: GroupsScreen.ink,
-                    foregroundColor: Colors.white,
-                    textStyle: const TextStyle(fontWeight: FontWeight.w800),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class GroupListTile extends StatelessWidget {
-  const GroupListTile({
-    super.key,
-    required this.group,
-    required this.onJoinPressed,
-    this.onTap,
-    this.onInvitePressed,
-    this.onDeletePressed,
-  });
-
-  final GroupSummary group;
-  final VoidCallback onJoinPressed;
-  final VoidCallback? onTap;
-  final VoidCallback? onInvitePressed;
-  final VoidCallback? onDeletePressed;
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: Colors.white.withAlpha(242),
-      borderRadius: BorderRadius.circular(18),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(18),
-        child: Container(
-          padding: const EdgeInsets.all(14),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(18),
-            border: Border.all(color: GroupsScreen.ink.withAlpha(20)),
-            boxShadow: [
-              BoxShadow(
-                color: GroupsScreen.ink.withAlpha(12),
-                blurRadius: 14,
-                offset: const Offset(0, 6),
-              ),
-            ],
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  CircleAvatar(
-                    radius: 24,
-                    backgroundColor: _categoryColor(
-                      group.category,
-                    ).withAlpha(38),
-                    child: Icon(
-                      _categoryIcon(group.category),
-                      color: _categoryColor(group.category),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            Flexible(
-                              child: Text(
-                                group.name,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
-                                  color: GroupsScreen.ink,
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.w800,
-                                ),
-                              ),
-                            ),
-                            if (group.isOfficial) ...[
-                              const SizedBox(width: 6),
-                              const Icon(
-                                Icons.verified,
-                                color: Color(0xFF4267B2),
-                                size: 18,
-                              ),
-                            ],
-                          ],
-                        ),
-                        const SizedBox(height: 5),
-                        Text(
-                          '${group.categoryLabel} · ${group.isOfficial ? 'Oficial' : 'No oficial'}',
-                          style: TextStyle(
-                            color: GroupsScreen.ink.withAlpha(180),
-                            fontSize: 12,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 10),
-              Text(
-                group.description.isEmpty
-                    ? 'Este grupo aun no tiene descripcion.'
-                    : group.description,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  color: GroupsScreen.ink.withAlpha(165),
-                  fontSize: 12,
-                  height: 1.25,
-                ),
-              ),
-              const SizedBox(height: 12),
-              Row(
-                children: [
-                  Icon(
-                    Icons.people_alt_outlined,
-                    size: 16,
-                    color: GroupsScreen.ink.withAlpha(170),
-                  ),
-                  const SizedBox(width: 5),
-                  Text(
-                    '${group.memberCount} integrantes',
-                    style: TextStyle(
-                      color: GroupsScreen.ink.withAlpha(170),
-                      fontSize: 12,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                  const Spacer(),
-                  if (group.isCreator)
-                    Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        IconButton(
-                          tooltip: 'Invitar persona',
-                          onPressed: onInvitePressed,
-                          icon: const Icon(Icons.person_add_alt_1, size: 20),
-                          color: GroupsScreen.ink,
-                        ),
-                        IconButton(
-                          tooltip: 'Eliminar grupo',
-                          onPressed: onDeletePressed,
-                          icon: const Icon(Icons.delete_outline, size: 20),
-                          color: Colors.red,
-                        ),
-                      ],
-                    )
-                  else if (group.isMember)
-                    const Chip(
-                      avatar: Icon(Icons.check_circle_outline, size: 16),
-                      label: Text('Eres miembro'),
-                    )
-                  else
-                    TextButton.icon(
-                      onPressed: onJoinPressed,
-                      icon: const Icon(Icons.lock_outline, size: 16),
-                      label: const Text('Por invitacion'),
-                      style: TextButton.styleFrom(
-                        foregroundColor: GroupsScreen.ink,
-                        textStyle: const TextStyle(fontWeight: FontWeight.w800),
-                      ),
-                    ),
-                ],
-              ),
-            ],
-          ),
         ),
       ),
     );
@@ -997,7 +640,7 @@ class _GroupFiltersBar extends StatelessWidget {
           ),
           ...groupCategories.map(
             (category) => _FilterOption(
-              icon: _categoryIcon(category),
+              icon: getGroupCategoryIcon(category),
               label: groupCategoryLabel(category),
               onTap: () => Navigator.of(context).pop(category),
             ),
@@ -1181,48 +824,10 @@ class _GroupStateMessage extends StatelessWidget {
   }
 }
 
-class _SectionTitle extends StatelessWidget {
-  const _SectionTitle(this.label);
-
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    return Text(
-      label,
-      style: const TextStyle(
-        color: GroupsScreen.ink,
-        fontWeight: FontWeight.w800,
-        fontSize: 15,
-      ),
-    );
-  }
-}
-
 String _typeLabel(GroupTypeFilter type) {
   return switch (type) {
     GroupTypeFilter.all => 'Tipo',
     GroupTypeFilter.official => 'Oficiales',
     GroupTypeFilter.unofficial => 'No oficiales',
-  };
-}
-
-IconData _categoryIcon(String category) {
-  return switch (category) {
-    'ACADEMICO' => Icons.school_outlined,
-    'CULTURAL' => Icons.palette_outlined,
-    'SOCIAL' => Icons.celebration_outlined,
-    'DEPORTIVO' => Icons.sports_soccer_outlined,
-    _ => Icons.more_horiz,
-  };
-}
-
-Color _categoryColor(String category) {
-  return switch (category) {
-    'ACADEMICO' => const Color(0xFF4267B2),
-    'CULTURAL' => const Color(0xFF8B4C9D),
-    'SOCIAL' => const Color(0xFFC2410C),
-    'DEPORTIVO' => const Color(0xFF2E7D32),
-    _ => GroupsScreen.ink,
   };
 }

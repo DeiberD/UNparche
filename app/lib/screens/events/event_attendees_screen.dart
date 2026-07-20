@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
-import 'event_api_client.dart';
+import '../../services/event_api_client.dart';
+import '../../models/confirmed_attendee.dart';
+import '../../models/event_api_exception.dart';
 
 class EventAttendeesScreen extends StatefulWidget {
   const EventAttendeesScreen({

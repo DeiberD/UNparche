@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
+import '../../models/event_api_exception.dart';
 
-import 'event_api_client.dart';
-import 'group_api_client.dart';
-import 'flutter_chat/chat_socket_client.dart';
-import 'location_picker_screen.dart';
+import '../../services/event_api_client.dart';
+import '../../services/group_api_client.dart';
+import '../../models/group_summary.dart';
+import '../../models/create_event_request.dart';
+import '../../flutter_chat/chat_socket_client.dart';
+import '../../location_picker_screen.dart';
 
 /// Event creation screen.
 ///
@@ -515,9 +518,8 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
                           ),
                         )
                         .toList(),
-                    onChanged: (group) {
-                      setState(() => _selectedGroup = group);
-                    },
+                    onChanged: (group) =>
+                        setState(() => _selectedGroup = group),
                   ),
               ],
               const SizedBox(height: 8),

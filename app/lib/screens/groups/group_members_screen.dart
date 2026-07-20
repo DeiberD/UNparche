@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 
-import 'group_api_client.dart';
+import '../../services/group_api_client.dart';
+import '../../models/group_summary.dart';
+import '../../models/group_member.dart';
+import '../../models/group_api_exception.dart';
 
 class GroupMembersScreen extends StatefulWidget {
   const GroupMembersScreen({

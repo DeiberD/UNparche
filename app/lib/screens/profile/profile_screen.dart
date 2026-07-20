@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
-import 'auth_state.dart';
-import 'group_api_client.dart';
+import '../../state/auth_state.dart';
+import '../../services/group_api_client.dart';
+import '../../models/group_summary.dart';
 
 /// User profile screen
 ///
@@ -382,15 +383,14 @@ class _GroupsList extends StatefulWidget {
 }
 
 class _GroupsListState extends State<_GroupsList> {
-  final _groupApiClient = GroupApiClient();
-  late Future<List<GroupSummary>> _groups;
+  final _client = GroupApiClient();
+  Future<List<GroupSummary>>? _groups;
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    final userId = AuthProvider.of(context).value.currentUser!.id;
-    _groups = _groupApiClient
-        .fetchGroups(userId: userId)
+    _groups ??= _client
+        .fetchGroups(userId: AuthProvider.of(context).value.currentUser!.id)
         .then(
           (groups) => groups
               .where((group) => group.isMember || group.isCreator)
@@ -406,17 +406,19 @@ class _GroupsListState extends State<_GroupsList> {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Center(child: CircularProgressIndicator());
         }
-        if (snapshot.hasError) {
-          return const _ProfileGroupMessage(
-            icon: Icons.error_outline,
-            message: 'No se pudieron cargar tus grupos.',
-          );
-        }
         final groups = snapshot.data ?? const [];
-        if (groups.isEmpty) {
-          return const _ProfileGroupMessage(
-            icon: Icons.groups_outlined,
-            message: 'Todavia no perteneces a ningun grupo.',
+        if (snapshot.hasError || groups.isEmpty) {
+          return Container(
+            padding: const EdgeInsets.all(18),
+            decoration: BoxDecoration(
+              color: Colors.white.withAlpha(238),
+              borderRadius: BorderRadius.circular(18),
+            ),
+            child: Text(
+              snapshot.hasError
+                  ? 'No se pudieron cargar tus grupos.'
+                  : 'Todavia no perteneces a ningun grupo.',
+            ),
           );
         }
         return Container(
@@ -490,13 +492,7 @@ class _ProfileGroupTile extends StatelessWidget {
     return Material(
       color: Colors.transparent,
       child: InkWell(
-        onTap: () {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('${group.name}: ${group.memberCount} integrantes'),
-            ),
-          );
-        },
+        onTap: null,
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
           child: Row(
@@ -553,30 +549,6 @@ class _ProfileGroupTile extends StatelessWidget {
             ],
           ),
         ),
-      ),
-    );
-  }
-}
-
-class _ProfileGroupMessage extends StatelessWidget {
-  const _ProfileGroupMessage({required this.icon, required this.message});
-  final IconData icon;
-  final String message;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: Colors.white.withAlpha(238),
-        borderRadius: BorderRadius.circular(18),
-      ),
-      child: Row(
-        children: [
-          Icon(icon, color: ProfileScreen._ink),
-          const SizedBox(width: 12),
-          Expanded(child: Text(message)),
-        ],
       ),
     );
   }
