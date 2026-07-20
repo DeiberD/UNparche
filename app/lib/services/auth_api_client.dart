@@ -35,6 +35,88 @@ class AuthApiClient {
     return data;
   }
 
+  Future<Map<String, dynamic>> loginWithGoogle(String idToken) async {
+    final request = await _httpClient.postUrl(_baseUri.resolve('/auth/google'));
+    request.headers.contentType = ContentType.json;
+    request.write(jsonEncode({'id_token': idToken}));
+
+    final response = await request.close();
+    final responseBody = await response.transform(utf8.decoder).join();
+    final data = jsonDecode(responseBody);
+
+    if (response.statusCode != 200 && response.statusCode != 201) {
+      throw Exception(data['error'] ?? 'Error al iniciar sesión con Google');
+    }
+    return data;
+  }
+
+  Future<Map<String, dynamic>> verificarCorreo(
+    String correo,
+    String codigo,
+  ) async {
+    final request = await _httpClient.postUrl(
+      _baseUri.resolve('/auth/verificar-correo'),
+    );
+    request.headers.contentType = ContentType.json;
+    request.write(jsonEncode({'correo_institucional': correo, 'codigo': codigo}));
+    final response = await request.close();
+    final body = await response.transform(utf8.decoder).join();
+    final data = jsonDecode(body);
+    if (response.statusCode != 200 && response.statusCode != 201) {
+      throw Exception(data['error'] ?? 'Código inválido');
+    }
+    return data;
+  }
+
+  Future<void> reenviarCodigo(String correo) async {
+    final request = await _httpClient.postUrl(
+      _baseUri.resolve('/auth/reenviar-codigo'),
+    );
+    request.headers.contentType = ContentType.json;
+    request.write(jsonEncode({'correo_institucional': correo}));
+    final response = await request.close();
+    final body = await response.transform(utf8.decoder).join();
+    final data = jsonDecode(body);
+    if (response.statusCode != 200) {
+      throw Exception(data['error'] ?? 'Error al reenviar código');
+    }
+  }
+
+  Future<void> olvidePassword(String correo) async {
+    final request = await _httpClient.postUrl(
+      _baseUri.resolve('/auth/olvide-password'),
+    );
+    request.headers.contentType = ContentType.json;
+    request.write(jsonEncode({'correo_institucional': correo}));
+    final response = await request.close();
+    if (response.statusCode != 200) {
+      // Consume body but always succeed (backend returns ok:true regardless)
+      await response.drain();
+    }
+  }
+
+  Future<void> restablecerPassword(
+    String correo,
+    String codigo,
+    String nuevaContrasena,
+  ) async {
+    final request = await _httpClient.postUrl(
+      _baseUri.resolve('/auth/restablecer-password'),
+    );
+    request.headers.contentType = ContentType.json;
+    request.write(jsonEncode({
+      'correo_institucional': correo,
+      'codigo': codigo,
+      'nueva_contrasena': nuevaContrasena,
+    }));
+    final response = await request.close();
+    final body = await response.transform(utf8.decoder).join();
+    final data = jsonDecode(body);
+    if (response.statusCode != 200) {
+      throw Exception(data['error'] ?? 'Código inválido o expirado');
+    }
+  }
+
   Future<Map<String, dynamic>> register(
     String nombre,
     String apellido,

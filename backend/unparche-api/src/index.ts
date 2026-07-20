@@ -5,6 +5,8 @@ type AppEnv = Env & {
 	unparche_db: D1Database;
 	CHAT_INTERNAL_TOKEN?: string;
 	JWT_SECRET: string;
+	GOOGLE_WEB_CLIENT_ID?: string;
+	RESEND_API_KEY?: string;
 };
 
 type CrearEventoBody = {
@@ -249,6 +251,94 @@ const selectInvitacionGrupoById = async (db: D1Database, idInvitacion: number) =
 		.bind(idInvitacion)
 		.first();
 
+// ─── Helpers de verificación de correo ────────────────────────────────────
+
+/** Genera un código numérico de 6 dígitos */
+const generarCodigo6Digitos = (): string =>
+	Math.floor(100000 + Math.random() * 900000).toString();
+
+/** Devuelve un timestamp ISO UTC con una expiración de N minutos desde ahora */
+const expirarEn = (minutos: number): string =>
+	new Date(Date.now() + minutos * 60 * 1000).toISOString();
+
+/** Construye el HTML de la plantilla de correo */
+const buildEmailHtml = (tipo: "registro" | "reset_password", codigo: string): string => {
+	const campusInk = "#263020";
+	const campusBackground = "#FBF5F2";
+	const campusSurface = "#F3ECE8";
+	const campusAccent = "#EEDDF0";
+
+	const subject = tipo === "registro"
+		? "Verifica tu correo en UNparche"
+		: "Restablece tu contraseña en UNparche";
+	const bodyText = tipo === "registro"
+		? "Para completar tu registro, ingresa el siguiente código de verificación:"
+		: "Para restablecer tu contraseña, ingresa el siguiente código:";
+	const expiryNote = "Este código expira en 15 minutos. Si no realizaste esta solicitud, ignora este mensaje.";
+
+	return `<!DOCTYPE html>
+<html lang="es">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>${subject}</title></head>
+<body style="margin:0;padding:0;background-color:${campusBackground};font-family:Arial,Helvetica,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background-color:${campusBackground};padding:32px 16px;">
+    <tr><td align="center">
+      <table width="560" cellpadding="0" cellspacing="0" style="background-color:#ffffff;border-radius:12px;border:1px solid ${campusSurface};overflow:hidden;">
+        <!-- Header -->
+        <tr><td style="background-color:${campusInk};padding:28px 32px;text-align:center;">
+          <p style="margin:0;color:#ffffff;font-size:28px;font-weight:900;letter-spacing:-0.5px;">UNparche</p>
+          <p style="margin:6px 0 0;color:rgba(255,255,255,0.7);font-size:13px;">Universidad Nacional de Colombia</p>
+        </td></tr>
+        <!-- Body -->
+        <tr><td style="padding:32px;">
+          <p style="margin:0 0 8px;color:${campusInk};font-size:20px;font-weight:700;">${subject}</p>
+          <p style="margin:0 0 24px;color:#555555;font-size:14px;line-height:1.6;">${bodyText}</p>
+          <!-- Code box -->
+          <table width="100%" cellpadding="0" cellspacing="0">
+            <tr><td align="center" style="padding:0 0 24px;">
+              <div style="display:inline-block;background-color:${campusAccent};border:2px solid ${campusInk};border-radius:12px;padding:20px 40px;">
+                <p style="margin:0;color:${campusInk};font-size:42px;font-weight:900;letter-spacing:12px;font-family:'Courier New',Courier,monospace;">${codigo}</p>
+              </div>
+            </td></tr>
+          </table>
+          <p style="margin:0;color:#888888;font-size:12px;line-height:1.6;text-align:center;">${expiryNote}</p>
+        </td></tr>
+        <!-- Footer -->
+        <tr><td style="background-color:${campusSurface};padding:16px 32px;text-align:center;">
+          <p style="margin:0;color:#999999;font-size:11px;">Este correo fue enviado automáticamente. Por favor no respondas a este mensaje.</p>
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>`;
+};
+
+/** Envía un correo usando la API de Resend */
+const sendEmail = async (
+	resendApiKey: string,
+	to: string,
+	subject: string,
+	html: string,
+): Promise<void> => {
+	const resp = await fetch("https://api.resend.com/emails", {
+		method: "POST",
+		headers: {
+			"Authorization": `Bearer ${resendApiKey}`,
+			"Content-Type": "application/json",
+		},
+		body: JSON.stringify({
+			from: "UNparche <noreply@unparche.app>",
+			to: [to],
+			subject,
+			html,
+		}),
+	});
+	if (!resp.ok) {
+		const err = await resp.text();
+		throw new Error(`Resend error ${resp.status}: ${err}`);
+	}
+};
+
 const verifyToken = async (request: Request, env: AppEnv) => {
 	const authHeader = request.headers.get("Authorization");
 	if (!authHeader || !authHeader.startsWith("Bearer ")) {
@@ -422,15 +512,33 @@ export default {
 			try {
 				const hash = await bcrypt.hash(contrasena, 10);
 				const result = await env.unparche_db.prepare(
-					`INSERT INTO usuario (correo_institucional, contrasena_hash, nombre, apellido, carrera, nickname) VALUES (?, ?, ?, ?, ?, ?)`
+					`INSERT INTO usuario (correo_institucional, contrasena_hash, nombre, apellido, carrera, nickname, correo_verificado) VALUES (?, ?, ?, ?, ?, ?, 0)`
 				).bind(correo_institucional.trim(), hash, nombre.trim(), apellido?.trim() || "", carrera?.trim() || null, nickname.trim()).run();
 
 				const idUsuario = result.meta.last_row_id;
-				// exp: Unix timestamp de expiración (7 días desde ahora)
-				const exp = Math.floor(Date.now() / 1000) + 7 * 24 * 60 * 60;
-				const token = await jwt.sign({ id: idUsuario, correo: correo_institucional, exp }, env.JWT_SECRET || "default_secret_for_dev");
 
-				return json({ ok: true, usuario: { id_usuario: idUsuario, correo_institucional, nombre, apellido, nickname: nickname.trim() }, token }, { status: 201 });
+				// Generar y guardar código de verificación (expira en 15 min)
+				const codigo = generarCodigo6Digitos();
+				const expira = expirarEn(15);
+				await env.unparche_db.prepare(
+					`INSERT INTO codigo_verificacion (id_usuario, codigo, tipo, expira_en) VALUES (?, ?, 'registro', ?)`
+				).bind(idUsuario, codigo, expira).run();
+
+				// Enviar correo de verificación (no bloquea el registro si falla)
+				if (env.RESEND_API_KEY) {
+					try {
+						await sendEmail(
+							env.RESEND_API_KEY,
+							correo_institucional.trim(),
+							"Verifica tu correo en UNparche",
+							buildEmailHtml("registro", codigo),
+						);
+					} catch (mailErr) {
+						console.error("Error enviando correo de verificación:", mailErr);
+					}
+				}
+
+				return json({ ok: true, requiereVerificacion: true, correo_institucional: correo_institucional.trim() }, { status: 201 });
 			} catch (e: any) {
 				if (e.message?.includes("UNIQUE")) {
 					return json({ ok: false, error: "El correo ya está registrado" }, { status: 409 });
@@ -446,18 +554,253 @@ export default {
 			const { correo_institucional, contrasena } = body;
 			if (!correo_institucional || !contrasena) return json({ ok: false, error: "Credenciales requeridas" }, { status: 400 });
 
-			const usuario = await env.unparche_db.prepare(`SELECT id_usuario, contrasena_hash, nombre, apellido, nickname FROM usuario WHERE correo_institucional = ?`)
-				.bind(correo_institucional.trim()).first<{ id_usuario: number, contrasena_hash: string, nombre: string, apellido: string, nickname: string | null }>();
+			const usuario = await env.unparche_db.prepare(`SELECT id_usuario, contrasena_hash, nombre, apellido, nickname, correo_verificado FROM usuario WHERE correo_institucional = ?`)
+				.bind(correo_institucional.trim()).first<{ id_usuario: number, contrasena_hash: string, nombre: string, apellido: string, nickname: string | null, correo_verificado: number }>();
 
 			if (!usuario) return json({ ok: false, error: "Credenciales invalidas" }, { status: 401 });
 
 			const valid = await bcrypt.compare(contrasena, usuario.contrasena_hash);
 			if (!valid) return json({ ok: false, error: "Credenciales invalidas" }, { status: 401 });
 
+			// Bloquear login si el correo no ha sido verificado
+			if (!usuario.correo_verificado) {
+				return json({ ok: false, error: "correo_no_verificado" }, { status: 403 });
+			}
+
 			// exp: Unix timestamp de expiración (7 días desde ahora)
 			const exp = Math.floor(Date.now() / 1000) + 7 * 24 * 60 * 60;
 			const token = await jwt.sign({ id: usuario.id_usuario, correo: correo_institucional, exp }, env.JWT_SECRET || "default_secret_for_dev");
 			return json({ ok: true, usuario: { id_usuario: usuario.id_usuario, correo_institucional, nombre: usuario.nombre, apellido: usuario.apellido, nickname: usuario.nickname }, token });
+		}
+
+		// POST /auth/google
+		if (request.method === "POST" && url.pathname === "/auth/google") {
+			let body: any;
+			try { body = await request.json(); } catch { return json({ ok: false, error: "JSON invalido" }, { status: 400 }); }
+			
+			const idToken = body.id_token;
+			if (!idToken) return json({ ok: false, error: "Token de Google requerido" }, { status: 400 });
+			if (!env.GOOGLE_WEB_CLIENT_ID) {
+				return json({ ok: false, error: "Google Sign-In no esta configurado" }, { status: 503 });
+			}
+
+			try {
+				const verifyResp = await fetch(
+					`https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(idToken)}`,
+				);
+				if (!verifyResp.ok) {
+					return json({ ok: false, error: "Token de Google inválido" }, { status: 401 });
+				}
+				const payload: any = await verifyResp.json();
+				if (payload.aud !== env.GOOGLE_WEB_CLIENT_ID || payload.email_verified !== "true") {
+					return json({ ok: false, error: "Token de Google inválido" }, { status: 401 });
+				}
+				
+				const correo_institucional = typeof payload.email === "string" ? payload.email.toLowerCase() : "";
+				if (!correo_institucional || !correo_institucional.endsWith("@unal.edu.co")) {
+					return json({ ok: false, error: "Debe usar un correo institucional @unal.edu.co" }, { status: 403 });
+				}
+
+				const nombre = payload.given_name || payload.name || "Usuario";
+				const apellido = payload.family_name || "";
+				const foto_perfil = payload.picture || null;
+
+				const existingUser = await env.unparche_db.prepare(
+					`SELECT id_usuario, correo_institucional, nombre, apellido, nickname, foto_perfil FROM usuario WHERE correo_institucional = ?`
+				).bind(correo_institucional).first<{ id_usuario: number, correo_institucional: string, nombre: string, apellido: string, nickname: string | null, foto_perfil: string | null }>();
+
+				let idUsuario: number;
+				let returnUser: any;
+
+				if (existingUser) {
+					idUsuario = existingUser.id_usuario;
+					returnUser = existingUser;
+				} else {
+					let baseNickname = correo_institucional.split('@')[0];
+					let nickname = baseNickname;
+					let nicknameExists = await env.unparche_db.prepare(`SELECT id_usuario FROM usuario WHERE nickname = ?`).bind(nickname).first();
+					if (nicknameExists) {
+						nickname = `${baseNickname}_${Math.floor(Math.random() * 10000)}`;
+					}
+
+					const fakeHash = `GOOGLE_OAUTH_${crypto.randomUUID()}`;
+
+					const result = await env.unparche_db.prepare(
+						`INSERT INTO usuario (correo_institucional, contrasena_hash, nombre, apellido, foto_perfil, nickname, correo_verificado) VALUES (?, ?, ?, ?, ?, ?, 1)`
+					).bind(correo_institucional, fakeHash, nombre, apellido, foto_perfil, nickname).run();
+
+					idUsuario = result.meta.last_row_id;
+					returnUser = {
+						id_usuario: idUsuario,
+						correo_institucional,
+						nombre,
+						apellido,
+						nickname,
+						foto_perfil
+					};
+				}
+
+				const exp = Math.floor(Date.now() / 1000) + 7 * 24 * 60 * 60;
+				const token = await jwt.sign({ id: idUsuario, correo: correo_institucional, exp }, env.JWT_SECRET || "default_secret_for_dev");
+
+				return json({ ok: true, usuario: returnUser, token }, { status: existingUser ? 200 : 201 });
+			} catch (e: any) {
+				return json({ ok: false, error: "Error interno al verificar con Google" }, { status: 500 });
+			}
+		}
+
+		// POST /auth/verificar-correo
+		if (request.method === "POST" && url.pathname === "/auth/verificar-correo") {
+			let body: any;
+			try { body = await request.json(); } catch { return json({ ok: false, error: "JSON invalido" }, { status: 400 }); }
+			const { correo_institucional, codigo } = body;
+			if (!correo_institucional || !codigo) return json({ ok: false, error: "Datos requeridos" }, { status: 400 });
+
+			const usuario = await env.unparche_db.prepare(
+				`SELECT id_usuario, nombre, apellido, nickname FROM usuario WHERE correo_institucional = ?`
+			).bind(correo_institucional.trim()).first<{ id_usuario: number, nombre: string, apellido: string, nickname: string | null }>();
+
+			if (!usuario) return json({ ok: false, error: "Usuario no encontrado" }, { status: 404 });
+
+			const registro = await env.unparche_db.prepare(
+				`SELECT id_codigo, expira_en, usado FROM codigo_verificacion
+				 WHERE id_usuario = ? AND codigo = ? AND tipo = 'registro'
+				 ORDER BY fecha_creacion DESC LIMIT 1`
+			).bind(usuario.id_usuario, codigo.trim()).first<{ id_codigo: number, expira_en: string, usado: number }>();
+
+			if (!registro) return json({ ok: false, error: "Código inválido" }, { status: 400 });
+			if (registro.usado) return json({ ok: false, error: "El código ya fue utilizado" }, { status: 400 });
+			if (new Date(registro.expira_en) < new Date()) return json({ ok: false, error: "El código ha expirado" }, { status: 400 });
+
+			await env.unparche_db.prepare(
+				`UPDATE codigo_verificacion SET usado = 1 WHERE id_codigo = ?`
+			).bind(registro.id_codigo).run();
+
+			await env.unparche_db.prepare(
+				`UPDATE usuario SET correo_verificado = 1 WHERE id_usuario = ?`
+			).bind(usuario.id_usuario).run();
+
+			const exp = Math.floor(Date.now() / 1000) + 7 * 24 * 60 * 60;
+			const token = await jwt.sign({ id: usuario.id_usuario, correo: correo_institucional, exp }, env.JWT_SECRET || "default_secret_for_dev");
+
+			return json({ ok: true, usuario: { id_usuario: usuario.id_usuario, correo_institucional, nombre: usuario.nombre, apellido: usuario.apellido, nickname: usuario.nickname }, token });
+		}
+
+		// POST /auth/reenviar-codigo
+		if (request.method === "POST" && url.pathname === "/auth/reenviar-codigo") {
+			let body: any;
+			try { body = await request.json(); } catch { return json({ ok: false, error: "JSON invalido" }, { status: 400 }); }
+			const { correo_institucional } = body;
+			if (!correo_institucional) return json({ ok: false, error: "Correo requerido" }, { status: 400 });
+
+			const usuario = await env.unparche_db.prepare(
+				`SELECT id_usuario, correo_verificado FROM usuario WHERE correo_institucional = ?`
+			).bind(correo_institucional.trim()).first<{ id_usuario: number, correo_verificado: number }>();
+
+			// Responde ok siempre para no filtrar si el correo existe
+			if (!usuario || usuario.correo_verificado) return json({ ok: true });
+
+			// Invalidar códigos anteriores de registro
+			await env.unparche_db.prepare(
+				`UPDATE codigo_verificacion SET usado = 1 WHERE id_usuario = ? AND tipo = 'registro' AND usado = 0`
+			).bind(usuario.id_usuario).run();
+
+			const codigo = generarCodigo6Digitos();
+			const expira = expirarEn(15);
+			await env.unparche_db.prepare(
+				`INSERT INTO codigo_verificacion (id_usuario, codigo, tipo, expira_en) VALUES (?, ?, 'registro', ?)`
+			).bind(usuario.id_usuario, codigo, expira).run();
+
+			if (env.RESEND_API_KEY) {
+				try {
+					await sendEmail(
+						env.RESEND_API_KEY,
+						correo_institucional.trim(),
+						"Verifica tu correo en UNparche",
+						buildEmailHtml("registro", codigo),
+					);
+				} catch (mailErr) {
+					console.error("Error reenviando código:", mailErr);
+				}
+			}
+
+			return json({ ok: true });
+		}
+
+		// POST /auth/olvide-password
+		if (request.method === "POST" && url.pathname === "/auth/olvide-password") {
+			let body: any;
+			try { body = await request.json(); } catch { return json({ ok: false, error: "JSON invalido" }, { status: 400 }); }
+			const { correo_institucional } = body;
+			if (!correo_institucional) return json({ ok: false, error: "Correo requerido" }, { status: 400 });
+
+			// Siempre responde ok para no revelar si el correo está registrado
+			const usuario = await env.unparche_db.prepare(
+				`SELECT id_usuario FROM usuario WHERE correo_institucional = ?`
+			).bind(correo_institucional.trim()).first<{ id_usuario: number }>();
+
+			if (usuario) {
+				// Invalidar códigos de reset anteriores
+				await env.unparche_db.prepare(
+					`UPDATE codigo_verificacion SET usado = 1 WHERE id_usuario = ? AND tipo = 'reset_password' AND usado = 0`
+				).bind(usuario.id_usuario).run();
+
+				const codigo = generarCodigo6Digitos();
+				const expira = expirarEn(15);
+				await env.unparche_db.prepare(
+					`INSERT INTO codigo_verificacion (id_usuario, codigo, tipo, expira_en) VALUES (?, ?, 'reset_password', ?)`
+				).bind(usuario.id_usuario, codigo, expira).run();
+
+				if (env.RESEND_API_KEY) {
+					try {
+						await sendEmail(
+							env.RESEND_API_KEY,
+							correo_institucional.trim(),
+							"Restablece tu contraseña en UNparche",
+							buildEmailHtml("reset_password", codigo),
+						);
+					} catch (mailErr) {
+						console.error("Error enviando correo de reset:", mailErr);
+					}
+				}
+			}
+
+			return json({ ok: true });
+		}
+
+		// POST /auth/restablecer-password
+		if (request.method === "POST" && url.pathname === "/auth/restablecer-password") {
+			let body: any;
+			try { body = await request.json(); } catch { return json({ ok: false, error: "JSON invalido" }, { status: 400 }); }
+			const { correo_institucional, codigo, nueva_contrasena } = body;
+			if (!correo_institucional || !codigo || !nueva_contrasena) return json({ ok: false, error: "Datos requeridos" }, { status: 400 });
+
+			const usuario = await env.unparche_db.prepare(
+				`SELECT id_usuario FROM usuario WHERE correo_institucional = ?`
+			).bind(correo_institucional.trim()).first<{ id_usuario: number }>();
+
+			if (!usuario) return json({ ok: false, error: "Código inválido o expirado" }, { status: 400 });
+
+			const registro = await env.unparche_db.prepare(
+				`SELECT id_codigo, expira_en, usado FROM codigo_verificacion
+				 WHERE id_usuario = ? AND codigo = ? AND tipo = 'reset_password'
+				 ORDER BY fecha_creacion DESC LIMIT 1`
+			).bind(usuario.id_usuario, codigo.trim()).first<{ id_codigo: number, expira_en: string, usado: number }>();
+
+			if (!registro || registro.usado) return json({ ok: false, error: "Código inválido o expirado" }, { status: 400 });
+			if (new Date(registro.expira_en) < new Date()) return json({ ok: false, error: "El código ha expirado" }, { status: 400 });
+
+			const hash = await bcrypt.hash(nueva_contrasena, 10);
+
+			await env.unparche_db.prepare(
+				`UPDATE usuario SET contrasena_hash = ? WHERE id_usuario = ?`
+			).bind(hash, usuario.id_usuario).run();
+
+			await env.unparche_db.prepare(
+				`UPDATE codigo_verificacion SET usado = 1 WHERE id_codigo = ?`
+			).bind(registro.id_codigo).run();
+
+			return json({ ok: true });
 		}
 
 		// GET /usuarios/me

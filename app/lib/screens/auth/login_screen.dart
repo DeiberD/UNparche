@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import '../../state/auth_state.dart';
 import '../../main.dart';
 import 'register_screen.dart';
+import 'verify_email_screen.dart';
+import 'forgot_password_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -24,6 +26,35 @@ class _LoginScreenState extends State<LoginScreen> {
       await AuthProvider.of(
         context,
       ).login(_emailController.text.trim(), _passwordController.text);
+      if (mounted) {
+        Navigator.of(context).pushAndRemoveUntil(
+          MaterialPageRoute(builder: (_) => const AuthGate()),
+          (route) => false,
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        if (e.toString().contains('correo_no_verificado')) {
+          Navigator.of(context).pushReplacement(
+            MaterialPageRoute(
+              builder: (_) => VerifyEmailScreen(correoInstitucional: _emailController.text.trim()),
+            ),
+          );
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(e.toString().replaceAll('Exception: ', ''))),
+          );
+        }
+      }
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  void _loginWithGoogle() async {
+    setState(() => _isLoading = true);
+    try {
+      await AuthProvider.of(context).loginWithGoogle();
       if (mounted) {
         Navigator.of(context).pushAndRemoveUntil(
           MaterialPageRoute(builder: (_) => const AuthGate()),
@@ -109,8 +140,14 @@ class _LoginScreenState extends State<LoginScreen> {
                 Align(
                   alignment: Alignment.centerRight,
                   child: TextButton(
-                    onPressed: () =>
-                        _showNotImplemented('Restablecer contraseña'),
+                    onPressed: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => const ForgotPasswordScreen(),
+                        ),
+                      );
+                    },
                     child: const Text('¿Olvidaste tu contraseña?'),
                   ),
                 ),
@@ -138,10 +175,9 @@ class _LoginScreenState extends State<LoginScreen> {
                 ),
                 const SizedBox(height: 16),
                 OutlinedButton.icon(
-                  onPressed: () =>
-                      _showNotImplemented('Inicio de sesión con Google'),
+                  onPressed: _isLoading ? null : _loginWithGoogle,
                   icon: const Icon(Icons.g_mobiledata, size: 28),
-                  label: const Text('Iniciar sesión con Google (Próximamente)'),
+                  label: const Text('Iniciar sesión con Google'),
                   style: OutlinedButton.styleFrom(
                     padding: const EdgeInsets.symmetric(vertical: 16),
                   ),
