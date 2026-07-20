@@ -61,6 +61,41 @@ class EventApiClient {
         .toList();
   }
 
+  Future<List<EventSummary>> fetchUserUpcomingEvents(int userId) async {
+    final eventsUri = _baseUri.resolve('/usuarios/$userId/eventos');
+    final request = await _httpClient.getUrl(eventsUri);
+    final response = await request.close();
+    final decoded = await _decodeJsonMapResponse(
+      response,
+      fallbackErrorMessage: 'No se pudieron cargar los próximos eventos.',
+    );
+
+    final organized = (decoded['eventos_organizados'] as List?)
+            ?.whereType<Map<String, dynamic>>()
+            .map(EventSummary.fromJson) ??
+        [];
+    final attending = (decoded['eventos_asistencia'] as List?)
+            ?.whereType<Map<String, dynamic>>()
+            .map(EventSummary.fromJson) ??
+        [];
+
+    final Map<int, EventSummary> eventMap = {};
+    for (var event in organized) {
+      if (event.id != null) eventMap[event.id!] = event;
+    }
+    for (var event in attending) {
+      if (event.id != null) eventMap[event.id!] = event;
+    }
+
+    final upcoming = eventMap.values.toList();
+    upcoming.sort((a, b) {
+      if (a.start == null || b.start == null) return 0;
+      return a.start!.compareTo(b.start!);
+    });
+
+    return upcoming;
+  }
+
   Future<Map<String, dynamic>> confirmAttendance({
     required int eventId,
     required int userId,

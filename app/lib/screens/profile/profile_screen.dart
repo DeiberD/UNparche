@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import '../../state/auth_state.dart';
 import '../../main.dart';
 import '../../services/group_api_client.dart';
+import '../../services/event_api_client.dart';
 import '../../models/group_summary.dart';
+import '../../models/event_summary.dart';
 
 /// User profile screen
 ///
@@ -559,58 +561,81 @@ class _ProfileGroupTile extends StatelessWidget {
 }
 
 /// Upcoming events list
-class _UpcomingEventsList extends StatelessWidget {
+class _UpcomingEventsList extends StatefulWidget {
   const _UpcomingEventsList();
 
   @override
-  Widget build(BuildContext context) {
-    // Sample events data
-    final events = [
-      _EventData(
-        title: 'Maratón Interna UNAL',
-        date: 'June 10, 2:00 PM',
-        location: '401 Julio Gar. Arm. - 103',
-        imageIcon: Icons.directions_run,
-      ),
-      _EventData(
-        title: 'Torneo De Fútbol PMP',
-        date: 'June 20, 9:00 AM',
-        location: 'Canchas microfútbol UNAL',
-        imageIcon: Icons.sports_soccer,
-      ),
-    ];
+  State<_UpcomingEventsList> createState() => _UpcomingEventsListState();
+}
 
-    return Column(
-      children: events.map((event) {
-        return Padding(
-          padding: const EdgeInsets.only(bottom: 12),
-          child: _EventTile(event: event),
+class _UpcomingEventsListState extends State<_UpcomingEventsList> {
+  final _client = EventApiClient();
+  Future<List<EventSummary>>? _events;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _events ??= _client.fetchUserUpcomingEvents(
+      AuthProvider.of(context).value.currentUser!.id,
+    ).then((events) {
+      final now = DateTime.now();
+      return events.where((e) => e.start != null && e.start!.isAfter(now)).toList();
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<List<EventSummary>>(
+      future: _events,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        final events = snapshot.data ?? const [];
+        if (snapshot.hasError || events.isEmpty) {
+          return Container(
+            padding: const EdgeInsets.all(18),
+            decoration: BoxDecoration(
+              color: Colors.white.withAlpha(238),
+              borderRadius: BorderRadius.circular(18),
+            ),
+            child: Text(
+              snapshot.hasError
+                  ? 'No se pudieron cargar los eventos.'
+                  : 'No tienes próximos eventos.',
+            ),
+          );
+        }
+
+        return Column(
+          children: events.map((event) {
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: _EventTile(event: event),
+            );
+          }).toList(),
         );
-      }).toList(),
+      },
     );
   }
 }
 
-/// Data model for an event
-class _EventData {
-  const _EventData({
-    required this.title,
-    required this.date,
-    required this.location,
-    required this.imageIcon,
-  });
-
-  final String title;
-  final String date;
-  final String location;
-  final IconData imageIcon;
+String _formatDate(DateTime date) {
+  final months = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
+  final month = months[date.month - 1];
+  final day = date.day;
+  final hour = date.hour;
+  final minute = date.minute.toString().padLeft(2, '0');
+  final amPm = hour >= 12 ? 'PM' : 'AM';
+  final hour12 = hour == 0 ? 12 : (hour > 12 ? hour - 12 : hour);
+  return '$day $month, $hour12:$minute $amPm';
 }
 
 /// Individual event tile
 class _EventTile extends StatelessWidget {
   const _EventTile({required this.event});
 
-  final _EventData event;
+  final EventSummary event;
 
   @override
   Widget build(BuildContext context) {
@@ -649,8 +674,8 @@ class _EventTile extends StatelessWidget {
                   borderRadius: BorderRadius.circular(14),
                   border: Border.all(color: ProfileScreen._ink.withAlpha(20)),
                 ),
-                child: Icon(
-                  event.imageIcon,
+                child: const Icon(
+                  Icons.event,
                   size: 32,
                   color: ProfileScreen._ink,
                 ),
@@ -684,7 +709,7 @@ class _EventTile extends StatelessWidget {
                         const SizedBox(width: 4),
                         Expanded(
                           child: Text(
-                            event.date,
+                            event.start != null ? _formatDate(event.start!) : 'Fecha no disponible',
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: TextStyle(
@@ -707,7 +732,7 @@ class _EventTile extends StatelessWidget {
                         const SizedBox(width: 4),
                         Expanded(
                           child: Text(
-                            event.location,
+                            event.locationLabel,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: TextStyle(
