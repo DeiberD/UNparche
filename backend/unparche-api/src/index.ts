@@ -66,11 +66,15 @@ type CrearMensajeChatBody = {
 };
 
 const EVENT_RETENTION_HOURS = 24;
+const EVENT_HISTORY_MONTHS = 6;
 const expiredEventCondition = `datetime(fecha_fin) <= datetime('now', '-${EVENT_RETENTION_HOURS} hours')`;
 const activeEventCondition = `fecha_eliminacion IS NULL
 				AND datetime(fecha_fin) > datetime('now', '-${EVENT_RETENTION_HOURS} hours')`;
 const activeEventConditionForAlias = (alias: string) => `${alias}.fecha_eliminacion IS NULL
 					AND datetime(${alias}.fecha_fin) > datetime('now', '-${EVENT_RETENTION_HOURS} hours')`;
+const visibleEventHistoryConditionForAlias = (alias: string) => `
+					(${alias}.fecha_eliminacion IS NULL OR ${alias}.estado = 'FINALIZADO')
+					AND datetime(${alias}.fecha_fin) >= datetime('now', '-${EVENT_HISTORY_MONTHS} months')`;
 
 const corsHeaders = {
 	"Access-Control-Allow-Origin": "*",
@@ -1718,7 +1722,7 @@ export default {
 			});
 		}
 
-		// GET asistencias de un evento y confirmados (/eventos/:id/asistencias)
+		// GET asistentes confirmados de un evento (/eventos/:id/asistencias)
 		const asistenciasEventoMatch = url.pathname.match(/^\/eventos\/(\d+)\/asistencias$/);
 
 		if (request.method === "GET" && asistenciasEventoMatch) {
@@ -1740,32 +1744,25 @@ export default {
 				return json({ ok: false, error: "Evento no encontrado." }, { status: 404 });
 			}
 
-			const resumen = await env.unparche_db
-				.prepare(
-					`SELECT
-						SUM(CASE WHEN estado = 'CONFIRMADA' THEN 1 ELSE 0 END) AS total_confirmadas,
-						SUM(CASE WHEN estado = 'CANCELADA' THEN 1 ELSE 0 END) AS total_canceladas,
-						COUNT(*) AS total_registros
-					FROM asistencia
-					WHERE id_evento = ?`
-				)
-				.bind(idEvento)
-				.first();
-
 			const asistencias = await env.unparche_db
 				.prepare(
 					`SELECT
 						a.id_asistencia,
 						a.id_usuario,
 						u.nombre || ' ' || u.apellido AS usuario_nombre,
-						u.correo_institucional,
+						u.nombre,
+						u.apellido,
+						u.nickname,
+						u.carrera,
+						u.informacion_personal,
+						u.foto_perfil,
 						a.id_evento,
 						a.estado,
-						a.notificaciones_activas,
 						a.fecha_confirmacion
 					FROM asistencia a
 					JOIN usuario u ON u.id_usuario = a.id_usuario
 					WHERE a.id_evento = ?
+					AND a.estado = 'CONFIRMADA'
 					ORDER BY a.fecha_confirmacion DESC`
 				)
 				.bind(idEvento)
@@ -1774,11 +1771,7 @@ export default {
 			return json({
 				ok: true,
 				evento,
-				resumen: {
-					total_confirmadas: resumen?.total_confirmadas ?? 0,
-					total_canceladas: resumen?.total_canceladas ?? 0,
-					total_registros: resumen?.total_registros ?? 0,
-				},
+				total_confirmadas: asistencias.results.length,
 				asistencias: asistencias.results,
 			});
 		}
@@ -1856,7 +1849,7 @@ export default {
 			JOIN tipo_evento t ON t.id_tipo_evento = e.id_tipo_evento
 			LEFT JOIN grupo g ON g.id_grupo = e.id_grupo
 			${asistenciaJoin}
-			WHERE ${activeEventConditionForAlias("e")}
+			WHERE ${visibleEventHistoryConditionForAlias("e")}
 			ORDER BY e.fecha_inicio DESC`;
 			const eventosStatement = env.unparche_db.prepare(eventosQuery);
 			const eventos = idUsuario === null

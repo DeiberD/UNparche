@@ -320,7 +320,8 @@ class _CampusMapScreenState extends State<CampusMapScreen> {
 
   bool _matchesTimeScope(EventSummary event, DateTime now) {
     final eventStart = event.start;
-    if (!event.isPublic || eventStart == null) {
+    final eventEnd = event.end;
+    if (!event.isPublic || eventStart == null || eventEnd == null) {
       return false;
     }
 
@@ -333,7 +334,7 @@ class _CampusMapScreenState extends State<CampusMapScreen> {
             !localStart.isBefore(now) &&
             !localStart.isAfter(next7Days),
       EventTimeScope.past =>
-        event.status != 'CANCELADO' && localStart.isBefore(now),
+        event.status != 'CANCELADO' && !eventEnd.toLocal().isAfter(now),
     };
   }
 
@@ -351,7 +352,7 @@ class _CampusMapScreenState extends State<CampusMapScreen> {
   Future<void> _pickDateFilter() async {
     final now = DateTime.now();
     final firstDate = _eventTimeScope == EventTimeScope.past
-        ? DateTime(now.year - 5)
+        ? DateTime(now.year, now.month - 6)
         : DateTime(now.year, now.month, now.day);
     final lastDate = _eventTimeScope == EventTimeScope.past
         ? DateTime(

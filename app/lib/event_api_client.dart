@@ -88,6 +88,29 @@ class EventApiClient {
     );
   }
 
+  Future<List<ConfirmedAttendee>> fetchConfirmedAttendees({
+    required int eventId,
+  }) async {
+    final request = await _httpClient.getUrl(
+      _baseUri.resolve('/eventos/$eventId/asistencias'),
+    );
+    final response = await request.close();
+    final decoded = await _decodeJsonMapResponse(
+      response,
+      fallbackErrorMessage: 'No se pudieron cargar los asistentes.',
+    );
+    final attendees = decoded['asistencias'];
+    if (attendees is! List) {
+      throw const EventApiException(
+        'La API devolvio una respuesta inesperada.',
+      );
+    }
+    return attendees
+        .whereType<Map<String, dynamic>>()
+        .map(ConfirmedAttendee.fromJson)
+        .toList();
+  }
+
   Future<void> deleteEvent({required int eventId, required int userId}) async {
     final eventUri = _baseUri
         .resolve('/eventos/$eventId')
@@ -153,6 +176,35 @@ class EventApiClient {
 
     return decoded;
   }
+}
+
+class ConfirmedAttendee {
+  const ConfirmedAttendee({
+    required this.id,
+    required this.name,
+    required this.nickname,
+    required this.career,
+    required this.personalInfo,
+    required this.profilePhoto,
+  });
+
+  factory ConfirmedAttendee.fromJson(Map<String, dynamic> json) {
+    return ConfirmedAttendee(
+      id: EventSummary._toInt(json['id_usuario']),
+      name: EventSummary._cleanString(json['usuario_nombre']) ?? 'Usuario',
+      nickname: EventSummary._cleanString(json['nickname']),
+      career: EventSummary._cleanString(json['carrera']),
+      personalInfo: EventSummary._cleanString(json['informacion_personal']),
+      profilePhoto: EventSummary._cleanString(json['foto_perfil']),
+    );
+  }
+
+  final int? id;
+  final String name;
+  final String? nickname;
+  final String? career;
+  final String? personalInfo;
+  final String? profilePhoto;
 }
 
 class EventSummary {

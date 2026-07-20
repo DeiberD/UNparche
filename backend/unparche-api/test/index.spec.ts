@@ -81,7 +81,7 @@ describe("UNparche API worker", () => {
 		await expect(response.json()).resolves.toEqual({ ok: true, tipos_evento: tiposEvento });
 	});
 
-	it("lists only lifecycle-active events", async () => {
+	it("lists current events and up to six months of finalized history", async () => {
 		const eventos = [
 			{
 				id_evento: 1,
@@ -113,8 +113,8 @@ describe("UNparche API worker", () => {
 		await waitOnExecutionContext(ctx);
 
 		expect(response.status).toBe(200);
-		expect(sql).toContain("e.fecha_eliminacion IS NULL");
-		expect(sql).toContain("datetime(e.fecha_fin) > datetime('now', '-24 hours')");
+		expect(sql).toContain("e.fecha_eliminacion IS NULL OR e.estado = 'FINALIZADO'");
+		expect(sql).toContain("datetime(e.fecha_fin) >= datetime('now', '-6 months')");
 		await expect(response.json()).resolves.toEqual({ ok: true, eventos });
 	});
 
@@ -359,6 +359,53 @@ describe("UNparche API worker", () => {
 			ok: true,
 			message: "Asistencia registrada correctamente.",
 			asistencia,
+		});
+	});
+
+	it("lists only confirmed attendees with public profile data", async () => {
+		const evento = { id_evento: 1, titulo: "Torneo de ajedrez" };
+		const asistencias = [{
+			id_asistencia: 1,
+			id_usuario: 2,
+			usuario_nombre: "Juan Perez",
+			nombre: "Juan",
+			apellido: "Perez",
+			nickname: "juanp",
+			carrera: "Ingenieria",
+			informacion_personal: "Ajedrecista",
+			foto_perfil: null,
+			id_evento: 1,
+			estado: "CONFIRMADA",
+			fecha_confirmacion: "2026-07-02 20:30:00",
+		}];
+		let prepareCall = 0;
+		let attendeesSql = "";
+		const request = new IncomingRequest("http://example.com/eventos/1/asistencias");
+		const ctx = createExecutionContext();
+		const testEnv = {
+			unparche_db: {
+				prepare: (query: string) => {
+					prepareCall += 1;
+					if (prepareCall === 1) {
+						return { bind: () => ({ first: async () => evento }) };
+					}
+					attendeesSql = query;
+					return { bind: () => ({ all: async () => ({ results: asistencias }) }) };
+				},
+			} as unknown as D1Database,
+		} as Env & { unparche_db: D1Database };
+
+		const response = await worker.fetch(request, testEnv, ctx);
+		await waitOnExecutionContext(ctx);
+
+		expect(response.status).toBe(200);
+		expect(attendeesSql).toContain("a.estado = 'CONFIRMADA'");
+		expect(attendeesSql).not.toContain("u.correo_institucional");
+		await expect(response.json()).resolves.toEqual({
+			ok: true,
+			evento,
+			total_confirmadas: 1,
+			asistencias,
 		});
 	});
 

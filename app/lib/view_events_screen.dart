@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import 'event_api_client.dart';
+import 'event_attendees_screen.dart';
 import 'auth_state.dart';
 import 'flutter_chat/chat_message.dart';
 import 'flutter_chat/chat_socket_client.dart';
@@ -1018,6 +1019,26 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
               onPressed: event.isActive && event.id != null
                   ? _toggleAttendance
                   : null,
+            ),
+            const SizedBox(height: 12),
+            OutlinedButton.icon(
+              onPressed: event.id == null
+                  ? null
+                  : () => Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => EventAttendeesScreen(
+                          eventId: event.id!,
+                          eventTitle: title,
+                          eventApiClient: widget.eventApiClient,
+                        ),
+                      ),
+                    ),
+              icon: const Icon(Icons.groups_outlined),
+              label: const Text('Ver asistentes confirmados'),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: EventsListView.ink,
+                minimumSize: const Size.fromHeight(50),
+              ),
             ),
             if (event.organizerId == widget.currentUserId) ...[
               const SizedBox(height: 12),
