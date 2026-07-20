@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../state/auth_state.dart';
+import '../../main.dart';
 import 'register_screen.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -23,6 +24,12 @@ class _LoginScreenState extends State<LoginScreen> {
       await AuthProvider.of(
         context,
       ).login(_emailController.text.trim(), _passwordController.text);
+      if (mounted) {
+        Navigator.of(context).pushAndRemoveUntil(
+          MaterialPageRoute(builder: (_) => const AuthGate()),
+          (route) => false,
+        );
+      }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

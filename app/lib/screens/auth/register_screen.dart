@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../state/auth_state.dart';
+import '../../main.dart';
 import 'login_screen.dart';
 
 class RegisterScreen extends StatefulWidget {
@@ -30,9 +31,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
         _passwordController.text,
       );
       if (mounted) {
-        Navigator.pop(
-          context,
-        ); // Regresa a la pantalla principal o la anterior tras login exitoso
+        Navigator.of(context).pushAndRemoveUntil(
+          MaterialPageRoute(builder: (_) => const AuthGate()),
+          (route) => false,
+        );
       }
     } catch (e) {
       if (mounted) {
