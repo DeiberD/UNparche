@@ -35,6 +35,21 @@ class AuthApiClient {
     return data;
   }
 
+  Future<Map<String, dynamic>> loginWithGoogle(String idToken) async {
+    final request = await _httpClient.postUrl(_baseUri.resolve('/auth/google'));
+    request.headers.contentType = ContentType.json;
+    request.write(jsonEncode({'id_token': idToken}));
+
+    final response = await request.close();
+    final responseBody = await response.transform(utf8.decoder).join();
+    final data = jsonDecode(responseBody);
+
+    if (response.statusCode != 200 && response.statusCode != 201) {
+      throw Exception(data['error'] ?? 'Error al iniciar sesión con Google');
+    }
+    return data;
+  }
+
   Future<Map<String, dynamic>> register(
     String nombre,
     String apellido,

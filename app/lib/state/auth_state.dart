@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:google_sign_in/google_sign_in.dart';
 import '../services/auth_api_client.dart';
 import '../models/user.dart';
 
@@ -66,6 +67,43 @@ class AuthNotifier extends ValueNotifier<AuthState> {
     value = value.copyWith(isLoading: true);
     try {
       final result = await _apiClient.login(correo, contrasena);
+      final token = result['token'] as String;
+      final userData = result['usuario'];
+
+      await _storage.write(key: 'jwt_token', value: token);
+      final user = User.fromJson(userData);
+
+      value = value.copyWith(currentUser: user, token: token, isLoading: false);
+    } catch (e) {
+      value = value.copyWith(isLoading: false);
+      rethrow;
+    }
+  }
+
+  Future<void> loginWithGoogle() async {
+    value = value.copyWith(isLoading: true);
+    try {
+      final googleSignIn = GoogleSignIn(
+        serverClientId: const String.fromEnvironment('GOOGLE_SERVER_CLIENT_ID'),
+        clientId: const String.fromEnvironment('GOOGLE_IOS_CLIENT_ID'),
+        scopes: ['email', 'profile'],
+      );
+
+      final googleUser = await googleSignIn.signIn();
+      if (googleUser == null) {
+        // User canceled
+        value = value.copyWith(isLoading: false);
+        return;
+      }
+
+      final googleAuth = await googleUser.authentication;
+      final idToken = googleAuth.idToken;
+
+      if (idToken == null) {
+        throw Exception('No se pudo obtener el token de Google');
+      }
+
+      final result = await _apiClient.loginWithGoogle(idToken);
       final token = result['token'] as String;
       final userData = result['usuario'];
 
