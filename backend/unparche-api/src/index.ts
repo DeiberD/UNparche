@@ -1,14 +1,30 @@
 import * as bcrypt from "bcryptjs";
 import jwt from "@tsndr/cloudflare-worker-jwt";
 
+/**
+ * UNparche Cloudflare Worker.
+ *
+ * This module is the HTTP entry point for the mobile application. It validates
+ * requests, coordinates authentication and email providers, and persists the
+ * domain data through the D1 binding. Routes are evaluated from top to bottom,
+ * so specific paths must appear before general regular expressions.
+ */
+
+/** Runtime resources injected by Cloudflare from wrangler.jsonc and secrets. */
 type AppEnv = Env & {
+	// D1 binding used by every repository-style query in this Worker.
 	unparche_db: D1Database;
+	// Optional shared secret used by the external C++ chat server.
 	CHAT_INTERNAL_TOKEN?: string;
+	// Signs and verifies application session tokens.
 	JWT_SECRET: string;
+	// OAuth audience accepted by the Google Sign-In endpoint.
 	GOOGLE_WEB_CLIENT_ID?: string;
+	// Enables verification and password-reset emails through Resend.
 	RESEND_API_KEY?: string;
 };
 
+// Request DTOs keep untrusted JSON optional until each endpoint validates it.
 type CrearEventoBody = {
 	titulo?: string;
 	descripcion?: string;
@@ -67,6 +83,7 @@ type CrearMensajeChatBody = {
 	timestamp_ms?: number;
 };
 
+// Event lifecycle rules shared by list, detail, update and cleanup queries.
 const EVENT_RETENTION_HOURS = 24;
 const EVENT_HISTORY_MONTHS = 6;
 const expiredEventCondition = `datetime(fecha_fin) <= datetime('now', '-${EVENT_RETENTION_HOURS} hours')`;
@@ -78,6 +95,7 @@ const visibleEventHistoryConditionForAlias = (alias: string) => `
 					(${alias}.fecha_eliminacion IS NULL OR ${alias}.estado = 'FINALIZADO')
 					AND datetime(${alias}.fecha_fin) >= datetime('now', '-${EVENT_HISTORY_MONTHS} months')`;
 
+// All API responses, including errors, expose the same CORS policy to Flutter.
 const corsHeaders = {
 	"Access-Control-Allow-Origin": "*",
 	"Access-Control-Allow-Methods": "GET, POST, PATCH, DELETE, OPTIONS",
@@ -93,6 +111,7 @@ const json = (body: unknown, init: ResponseInit = {}) =>
 		},
 	});
 
+/** Derives the canonical end timestamp instead of trusting a client value. */
 const buildFechaFin = (fechaInicio: string, duracionMinutos: number) => {
 	const inicio = new Date(fechaInicio);
 
@@ -103,6 +122,7 @@ const buildFechaFin = (fechaInicio: string, duracionMinutos: number) => {
 	return new Date(inicio.getTime() + duracionMinutos * 60_000).toISOString();
 };
 
+// Narrowing helpers reject strings and non-finite values from decoded JSON.
 const toInteger = (value: unknown) => {
 	if (typeof value === "number" && Number.isInteger(value)) {
 		return value;
@@ -131,6 +151,12 @@ const toBoolean = (value: unknown, defaultValue: boolean) => {
 	return null;
 };
 
+/**
+ * HU-36 lifecycle cleanup.
+ *
+ * The row is soft-deleted so histories can still identify the event. Active
+ * views stop returning it and its chat is disabled for new interactions.
+ */
 const pruneExpiredEvents = async (db: D1Database) =>
 	db
 		.prepare(
@@ -144,6 +170,7 @@ const pruneExpiredEvents = async (db: D1Database) =>
 		)
 		.run();
 
+// Shared selectors centralize response shapes reused after mutations.
 const selectEventoById = async (db: D1Database, idEvento: number) =>
 	db
 		.prepare(
@@ -340,6 +367,7 @@ const sendEmail = async (
 };
 
 const verifyToken = async (request: Request, env: AppEnv) => {
+	// Protected routes receive the JWT through the standard Bearer header.
 	const authHeader = request.headers.get("Authorization");
 	if (!authHeader || !authHeader.startsWith("Bearer ")) {
 		return null;
@@ -355,14 +383,20 @@ const verifyToken = async (request: Request, env: AppEnv) => {
 	}
 };
 
+/**
+ * Cloudflare invokes `scheduled` for cron jobs and `fetch` for HTTP requests.
+ * Both handlers share the lifecycle, validation and D1 helpers above.
+ */
 export default {
 	async scheduled(_event, env, ctx): Promise<void> {
+		// waitUntil keeps the cron execution alive until D1 finishes the cleanup.
 		ctx.waitUntil(pruneExpiredEvents(env.unparche_db));
 	},
 
 	async fetch(request, env): Promise<Response> {
 		const url = new URL(request.url);
 
+		// Browsers send this preflight before cross-origin non-simple requests.
 		if (request.method === "OPTIONS") {
 			return new Response(null, { status: 204, headers: corsHeaders });
 		}
@@ -371,6 +405,9 @@ export default {
 			return json({ ok: true, message: "UNparche API" });
 		}
 
+		// -------------------------------------------------------------------------
+		// Internal chat bridge
+		// -------------------------------------------------------------------------
 		// POST /internal/mensajes
 		// Llamado exclusivamente por el chat server en C++ (boost::asio),
 		// de forma fire-and-forget cada vez que llega un mensaje nuevo a
@@ -494,6 +531,9 @@ export default {
 			return json({ ok: true, evento, mensajes: mensajes.results });
 		}
 
+		// -------------------------------------------------------------------------
+		// Authentication, email verification and user session
+		// -------------------------------------------------------------------------
 		// POST /auth/register
 		if (request.method === "POST" && url.pathname === "/auth/register") {
 			let body: any;
@@ -510,6 +550,7 @@ export default {
 			}
 
 			try {
+				// Passwords are persisted only as bcrypt hashes; the plain value is discarded.
 				const hash = await bcrypt.hash(contrasena, 10);
 				const result = await env.unparche_db.prepare(
 					`INSERT INTO usuario (correo_institucional, contrasena_hash, nombre, apellido, carrera, nickname, correo_verificado) VALUES (?, ?, ?, ?, ?, ?, 0)`
@@ -592,6 +633,7 @@ export default {
 					return json({ ok: false, error: "Token de Google inválido" }, { status: 401 });
 				}
 				const payload: any = await verifyResp.json();
+				// Audience prevents accepting a valid Google token issued for another app.
 				if (payload.aud !== env.GOOGLE_WEB_CLIENT_ID || payload.email_verified !== "true") {
 					return json({ ok: false, error: "Token de Google inválido" }, { status: 401 });
 				}
@@ -844,6 +886,9 @@ export default {
 		}
 
 
+		// -------------------------------------------------------------------------
+		// Catalogs and groups
+		// -------------------------------------------------------------------------
 		// GET tipos-evento
 		if (request.method === "GET" && url.pathname === "/tipos-evento") {
 			const tiposEvento = await env.unparche_db
@@ -1194,6 +1239,7 @@ export default {
 			);
 		}
 
+		// Membership is invitation-only; direct joins above are rejected explicitly.
 		const invitacionesGrupoMatch = url.pathname.match(/^\/grupos\/(\d+)\/invitaciones$/);
 		if (request.method === "POST" && invitacionesGrupoMatch) {
 			const idGrupo = Number(invitacionesGrupoMatch[1]);
@@ -1361,6 +1407,9 @@ export default {
 		}
 
 
+		// -------------------------------------------------------------------------
+		// Users and their event relationships
+		// -------------------------------------------------------------------------
 		// GET usuarios/id
 		const usuarioMatch = url.pathname.match(/^\/usuarios\/(\d+)$/);
 
@@ -1391,6 +1440,7 @@ export default {
 			return json({ ok: true, usuario });
 		}
 
+		// HU-24 intentionally includes soft-deleted rows produced by HU-36.
 		// GET historial de eventos a los que asistio un usuario.
 		const historialEventosUsuarioMatch = url.pathname.match(
 			/^\/usuarios\/(\d+)\/eventos\/historial$/
@@ -1558,6 +1608,9 @@ export default {
 		}
 
 
+		// -------------------------------------------------------------------------
+		// Event detail and organizer mutations
+		// -------------------------------------------------------------------------
 		// GET eventos/id
 		const eventoMatch = url.pathname.match(/^\/eventos\/(\d+)$/);
 
@@ -1932,6 +1985,9 @@ export default {
 			}
 		}
 
+		// -------------------------------------------------------------------------
+		// Attendance
+		// -------------------------------------------------------------------------
 		// POST eventos/id/asistencias (asistencia de un usuario a un evento)
 		const asistenciaEventoMatch = url.pathname.match(/^\/eventos\/(\d+)\/asistencias$/);
 
@@ -1977,6 +2033,7 @@ export default {
 			}
 
 			try {
+				// The unique user-event pair turns repeated taps into an idempotent update.
 				await env.unparche_db
 					.prepare(
 						`INSERT INTO asistencia (
@@ -2164,6 +2221,9 @@ export default {
 		}
 
 
+		// -------------------------------------------------------------------------
+		// Event collection routes
+		// -------------------------------------------------------------------------
 		// GET ids de todos los eventos actuales con chat habilitado
 		if (request.method === "GET" && url.pathname === "/eventos/ids-actuales") {
 			const eventosActuales = await env.unparche_db
@@ -2258,6 +2318,7 @@ export default {
 		}
 
 
+		// Creation remains after GET collection matching so each branch is explicit.
 		// POST eventos
 		if (request.method === "POST" && url.pathname === "/eventos") {
 			let body: CrearEventoBody;
@@ -2268,6 +2329,7 @@ export default {
 				return json({ ok: false, error: "El body debe ser JSON valido." }, { status: 400 });
 			}
 
+			// Normalize the decoded DTO once before applying domain validation.
 			const titulo = typeof body.titulo === "string" ? body.titulo.trim() : "";
 			const descripcion = typeof body.descripcion === "string" ? body.descripcion.trim() : "";
 			const fechaInicio = typeof body.fecha_inicio === "string" ? body.fecha_inicio.trim() : "";
@@ -2316,6 +2378,7 @@ export default {
 			}
 
 			if (idGrupo !== null) {
+				// Group events can only be created by an active member of that group.
 				const membresia = await env.unparche_db.prepare(
 					`SELECT id_membresia FROM membresia_grupo
 					 WHERE id_grupo = ? AND id_usuario = ? AND estado = 'ACTIVA'`
