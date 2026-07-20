@@ -83,8 +83,9 @@ class AuthNotifier extends ValueNotifier<AuthState> {
     String nombre,
     String apellido,
     String correo,
-    String contrasena,
-  ) async {
+    String contrasena, {
+    String? carrera,
+  }) async {
     value = value.copyWith(isLoading: true);
     try {
       final result = await _apiClient.register(
@@ -92,6 +93,7 @@ class AuthNotifier extends ValueNotifier<AuthState> {
         apellido,
         correo,
         contrasena,
+        carrera: carrera,
       );
       final token = result['token'] as String;
       final userData = result['usuario'];

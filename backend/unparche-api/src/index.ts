@@ -408,7 +408,7 @@ export default {
 		if (request.method === "POST" && url.pathname === "/auth/register") {
 			let body: any;
 			try { body = await request.json(); } catch { return json({ ok: false, error: "JSON invalido" }, { status: 400 }); }
-			const { correo_institucional, contrasena, nombre, apellido } = body;
+			const { correo_institucional, contrasena, nombre, apellido, carrera } = body;
 
 			if (!correo_institucional || !correo_institucional.endsWith("@unal.edu.co") || !contrasena || !nombre) {
 				return json({ ok: false, error: "Datos invalidos o correo no institucional" }, { status: 400 });
@@ -417,8 +417,8 @@ export default {
 			try {
 				const hash = await bcrypt.hash(contrasena, 10);
 				const result = await env.unparche_db.prepare(
-					`INSERT INTO usuario (correo_institucional, contrasena_hash, nombre, apellido) VALUES (?, ?, ?, ?)`
-				).bind(correo_institucional.trim(), hash, nombre.trim(), apellido?.trim() || "").run();
+					`INSERT INTO usuario (correo_institucional, contrasena_hash, nombre, apellido, carrera) VALUES (?, ?, ?, ?, ?)`
+				).bind(correo_institucional.trim(), hash, nombre.trim(), apellido?.trim() || "", carrera?.trim() || null).run();
 
 				const idUsuario = result.meta.last_row_id;
 				// exp: Unix timestamp de expiración (7 días desde ahora)

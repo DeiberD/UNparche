@@ -14,6 +14,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
   final _formKey = GlobalKey<FormState>();
   final _nameController = TextEditingController();
   final _lastNameController = TextEditingController();
+  final _carreraController = TextEditingController();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   final _confirmPasswordController = TextEditingController();
@@ -29,6 +30,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
         _lastNameController.text.trim(),
         _emailController.text.trim(),
         _passwordController.text,
+        carrera: _carreraController.text.trim().isEmpty ? null : _carreraController.text.trim(),
       );
       if (mounted) {
         Navigator.of(context).pushAndRemoveUntil(
@@ -51,6 +53,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
   void dispose() {
     _nameController.dispose();
     _lastNameController.dispose();
+    _carreraController.dispose();
     _emailController.dispose();
     _passwordController.dispose();
     _confirmPasswordController.dispose();
@@ -99,6 +102,14 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   ),
                   validator: (value) =>
                       (value == null || value.isEmpty) ? 'Requerido' : null,
+                ),
+                const SizedBox(height: 16),
+                TextFormField(
+                  controller: _carreraController,
+                  decoration: const InputDecoration(
+                    labelText: 'Carrera (Opcional)',
+                    border: OutlineInputBorder(),
+                  ),
                 ),
                 const SizedBox(height: 16),
                 TextFormField(
