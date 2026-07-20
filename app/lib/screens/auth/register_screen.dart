@@ -14,6 +14,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
   final _formKey = GlobalKey<FormState>();
   final _nameController = TextEditingController();
   final _lastNameController = TextEditingController();
+  final _nicknameController = TextEditingController();
   final _carreraController = TextEditingController();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
@@ -30,6 +31,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
         _lastNameController.text.trim(),
         _emailController.text.trim(),
         _passwordController.text,
+        _nicknameController.text.trim(),
         carrera: _carreraController.text.trim().isEmpty ? null : _carreraController.text.trim(),
       );
       if (mounted) {
@@ -53,6 +55,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
   void dispose() {
     _nameController.dispose();
     _lastNameController.dispose();
+    _nicknameController.dispose();
     _carreraController.dispose();
     _emailController.dispose();
     _passwordController.dispose();
@@ -102,6 +105,21 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   ),
                   validator: (value) =>
                       (value == null || value.isEmpty) ? 'Requerido' : null,
+                ),
+                const SizedBox(height: 16),
+                TextFormField(
+                  controller: _nicknameController,
+                  decoration: const InputDecoration(
+                    labelText: 'Nickname',
+                    border: OutlineInputBorder(),
+                  ),
+                  validator: (value) {
+                    if (value == null || value.trim().isEmpty) return 'Requerido';
+                    if (value.contains(' ')) return 'No debe contener espacios';
+                    if (value.length < 3) return 'Mínimo 3 caracteres';
+                    if (value.length > 20) return 'Máximo 20 caracteres';
+                    return null;
+                  },
                 ),
                 const SizedBox(height: 16),
                 TextFormField(

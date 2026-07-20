@@ -83,7 +83,8 @@ class AuthNotifier extends ValueNotifier<AuthState> {
     String nombre,
     String apellido,
     String correo,
-    String contrasena, {
+    String contrasena,
+    String nickname, {
     String? carrera,
   }) async {
     value = value.copyWith(isLoading: true);
@@ -93,6 +94,7 @@ class AuthNotifier extends ValueNotifier<AuthState> {
         apellido,
         correo,
         contrasena,
+        nickname,
         carrera: carrera,
       );
       final token = result['token'] as String;
