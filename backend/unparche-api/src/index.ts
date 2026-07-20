@@ -468,13 +468,32 @@ export default {
 			const idToken = body.id_token;
 			if (!idToken) return json({ ok: false, error: "Token de Google requerido" }, { status: 400 });
 
+			// Client IDs válidos de la app — cualquier token emitido para nuestra app
+			// tendrá uno de estos valores en el campo `aud`.
+			const VALID_AUDIENCE = [
+				"28638109204-kp4o4h10hab5pr7e80f44vuiaj97kikj.apps.googleusercontent.com", // Web / serverClientId
+				"28638109204-f6qhsdstgop8or1viqs3qiqa6m528146.apps.googleusercontent.com", // iOS
+				"28638109204-i3jt17gmurn0pf5rkbr6cap30bvgpsqc.apps.googleusercontent.com", // Android 1
+				"28638109204-s8m6okn54buk0mlrbsr4m139jglm8jgt.apps.googleusercontent.com", // Android 2
+			];
+
 			try {
 				const verifyResp = await fetch(`https://oauth2.googleapis.com/tokeninfo?id_token=${idToken}`);
 				if (!verifyResp.ok) {
 					return json({ ok: false, error: "Token de Google inválido" }, { status: 401 });
 				}
 				const payload: any = await verifyResp.json();
-				
+
+				// Validar que el token fue emitido para nuestra app (previene token injection attacks)
+				if (!payload.aud || !VALID_AUDIENCE.includes(payload.aud)) {
+					return json({ ok: false, error: "Token no autorizado" }, { status: 401 });
+				}
+
+				// Validar que Google haya verificado el correo del usuario
+				if (payload.email_verified !== "true") {
+					return json({ ok: false, error: "Correo de Google no verificado" }, { status: 401 });
+				}
+
 				const correo_institucional = payload.email;
 				if (!correo_institucional || !correo_institucional.endsWith("@unal.edu.co")) {
 					return json({ ok: false, error: "Debe usar un correo institucional @unal.edu.co" }, { status: 403 });
@@ -494,7 +513,6 @@ export default {
 				if (existingUser) {
 					idUsuario = existingUser.id_usuario;
 					returnUser = existingUser;
-					// Si el usuario no tenía foto, podríamos actualizarla aquí, pero lo mantendremos simple.
 				} else {
 					let baseNickname = correo_institucional.split('@')[0];
 					let nickname = baseNickname;
@@ -506,7 +524,7 @@ export default {
 					const fakeHash = `GOOGLE_OAUTH_${crypto.randomUUID()}`;
 
 					const result = await env.unparche_db.prepare(
-						`INSERT INTO usuario (correo_institucional, contrasena_hash, nombre, apellido, foto_perfil, nickname) VALUES (?, ?, ?, ?, ?, ?)`
+						`INSERT INTO usuario (correo_institucional, contrasena_hash, nombre, apellido, foto_perfil, nickname, correo_verificado) VALUES (?, ?, ?, ?, ?, ?, 1)`
 					).bind(correo_institucional, fakeHash, nombre, apellido, foto_perfil, nickname).run();
 
 					idUsuario = result.meta.last_row_id;
