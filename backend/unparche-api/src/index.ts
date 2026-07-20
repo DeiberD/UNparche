@@ -460,6 +460,75 @@ export default {
 			return json({ ok: true, usuario: { id_usuario: usuario.id_usuario, correo_institucional, nombre: usuario.nombre, apellido: usuario.apellido, nickname: usuario.nickname }, token });
 		}
 
+		// POST /auth/google
+		if (request.method === "POST" && url.pathname === "/auth/google") {
+			let body: any;
+			try { body = await request.json(); } catch { return json({ ok: false, error: "JSON invalido" }, { status: 400 }); }
+			
+			const idToken = body.id_token;
+			if (!idToken) return json({ ok: false, error: "Token de Google requerido" }, { status: 400 });
+
+			try {
+				const verifyResp = await fetch(`https://oauth2.googleapis.com/tokeninfo?id_token=${idToken}`);
+				if (!verifyResp.ok) {
+					return json({ ok: false, error: "Token de Google inválido" }, { status: 401 });
+				}
+				const payload: any = await verifyResp.json();
+				
+				const correo_institucional = payload.email;
+				if (!correo_institucional || !correo_institucional.endsWith("@unal.edu.co")) {
+					return json({ ok: false, error: "Debe usar un correo institucional @unal.edu.co" }, { status: 403 });
+				}
+
+				const nombre = payload.given_name || payload.name || "Usuario";
+				const apellido = payload.family_name || "";
+				const foto_perfil = payload.picture || null;
+
+				const existingUser = await env.unparche_db.prepare(
+					`SELECT id_usuario, correo_institucional, nombre, apellido, nickname, foto_perfil FROM usuario WHERE correo_institucional = ?`
+				).bind(correo_institucional).first<{ id_usuario: number, correo_institucional: string, nombre: string, apellido: string, nickname: string | null, foto_perfil: string | null }>();
+
+				let idUsuario: number;
+				let returnUser: any;
+
+				if (existingUser) {
+					idUsuario = existingUser.id_usuario;
+					returnUser = existingUser;
+					// Si el usuario no tenía foto, podríamos actualizarla aquí, pero lo mantendremos simple.
+				} else {
+					let baseNickname = correo_institucional.split('@')[0];
+					let nickname = baseNickname;
+					let nicknameExists = await env.unparche_db.prepare(`SELECT id_usuario FROM usuario WHERE nickname = ?`).bind(nickname).first();
+					if (nicknameExists) {
+						nickname = `${baseNickname}_${Math.floor(Math.random() * 10000)}`;
+					}
+
+					const fakeHash = `GOOGLE_OAUTH_${crypto.randomUUID()}`;
+
+					const result = await env.unparche_db.prepare(
+						`INSERT INTO usuario (correo_institucional, contrasena_hash, nombre, apellido, foto_perfil, nickname) VALUES (?, ?, ?, ?, ?, ?)`
+					).bind(correo_institucional, fakeHash, nombre, apellido, foto_perfil, nickname).run();
+
+					idUsuario = result.meta.last_row_id;
+					returnUser = {
+						id_usuario: idUsuario,
+						correo_institucional,
+						nombre,
+						apellido,
+						nickname,
+						foto_perfil
+					};
+				}
+
+				const exp = Math.floor(Date.now() / 1000) + 7 * 24 * 60 * 60;
+				const token = await jwt.sign({ id: idUsuario, correo: correo_institucional, exp }, env.JWT_SECRET || "default_secret_for_dev");
+
+				return json({ ok: true, usuario: returnUser, token }, { status: existingUser ? 200 : 201 });
+			} catch (e: any) {
+				return json({ ok: false, error: "Error interno al verificar con Google" }, { status: 500 });
+			}
+		}
+
 		// GET /usuarios/me
 		if (request.method === "GET" && url.pathname === "/usuarios/me") {
 			const payload = await verifyToken(request, env as AppEnv);
