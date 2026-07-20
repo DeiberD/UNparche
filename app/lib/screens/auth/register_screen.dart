@@ -136,7 +136,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   obscureText: true,
                   validator: (value) {
                     if (value == null || value.isEmpty) return 'Requerida';
-                    if (value.length < 6) return 'Mínimo 6 caracteres';
+                    if (value.length < 8) return 'Mínimo 8 caracteres';
+                    if (!value.contains(RegExp(r'[A-Z]'))) return 'Debe contener al menos una mayúscula';
+                    if (!value.contains(RegExp(r'[a-z]'))) return 'Debe contener al menos una minúscula';
+                    if (!value.contains(RegExp(r'[0-9]'))) return 'Debe contener al menos un número';
                     return null;
                   },
                 ),
