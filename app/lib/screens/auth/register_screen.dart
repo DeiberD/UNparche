@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import '../../state/auth_state.dart';
+import '../../main.dart';
 import 'login_screen.dart';
+import 'verify_email_screen.dart';
 
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key});
@@ -13,6 +15,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
   final _formKey = GlobalKey<FormState>();
   final _nameController = TextEditingController();
   final _lastNameController = TextEditingController();
+  final _nicknameController = TextEditingController();
+  final _carreraController = TextEditingController();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   final _confirmPasswordController = TextEditingController();
@@ -23,16 +27,48 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
     setState(() => _isLoading = true);
     try {
-      await AuthProvider.of(context).register(
+      final requiereVerificacion = await AuthProvider.of(context).register(
         _nameController.text.trim(),
         _lastNameController.text.trim(),
         _emailController.text.trim(),
         _passwordController.text,
+        _nicknameController.text.trim(),
+        carrera: _carreraController.text.trim().isEmpty ? null : _carreraController.text.trim(),
       );
       if (mounted) {
-        Navigator.pop(
-          context,
-        ); // Regresa a la pantalla principal o la anterior tras login exitoso
+        if (requiereVerificacion) {
+          Navigator.of(context).pushReplacement(
+            MaterialPageRoute(
+              builder: (_) => VerifyEmailScreen(correoInstitucional: _emailController.text.trim()),
+            ),
+          );
+        } else {
+          Navigator.of(context).pushAndRemoveUntil(
+            MaterialPageRoute(builder: (_) => const AuthGate()),
+            (route) => false,
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(e.toString().replaceAll('Exception: ', ''))),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  void _loginWithGoogle() async {
+    setState(() => _isLoading = true);
+    try {
+      await AuthProvider.of(context).loginWithGoogle();
+      if (mounted) {
+        Navigator.of(context).pushAndRemoveUntil(
+          MaterialPageRoute(builder: (_) => const AuthGate()),
+          (route) => false,
+        );
       }
     } catch (e) {
       if (mounted) {
@@ -49,6 +85,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
   void dispose() {
     _nameController.dispose();
     _lastNameController.dispose();
+    _nicknameController.dispose();
+    _carreraController.dispose();
     _emailController.dispose();
     _passwordController.dispose();
     _confirmPasswordController.dispose();
@@ -100,6 +138,29 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 ),
                 const SizedBox(height: 16),
                 TextFormField(
+                  controller: _nicknameController,
+                  decoration: const InputDecoration(
+                    labelText: 'Nickname',
+                    border: OutlineInputBorder(),
+                  ),
+                  validator: (value) {
+                    if (value == null || value.trim().isEmpty) return 'Requerido';
+                    if (value.contains(' ')) return 'No debe contener espacios';
+                    if (value.length < 3) return 'Mínimo 3 caracteres';
+                    if (value.length > 20) return 'Máximo 20 caracteres';
+                    return null;
+                  },
+                ),
+                const SizedBox(height: 16),
+                TextFormField(
+                  controller: _carreraController,
+                  decoration: const InputDecoration(
+                    labelText: 'Carrera (Opcional)',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                TextFormField(
                   controller: _emailController,
                   decoration: const InputDecoration(
                     labelText: 'Correo Institucional',
@@ -123,7 +184,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   obscureText: true,
                   validator: (value) {
                     if (value == null || value.isEmpty) return 'Requerida';
-                    if (value.length < 6) return 'Mínimo 6 caracteres';
+                    if (value.length < 8) return 'Mínimo 8 caracteres';
+                    if (!value.contains(RegExp(r'[A-Z]'))) return 'Debe contener al menos una mayúscula';
+                    if (!value.contains(RegExp(r'[a-z]'))) return 'Debe contener al menos una minúscula';
+                    if (!value.contains(RegExp(r'[0-9]'))) return 'Debe contener al menos un número';
                     return null;
                   },
                 ),
@@ -162,6 +226,15 @@ class _RegisterScreenState extends State<RegisterScreen> {
                           'Registrarse',
                           style: TextStyle(fontSize: 16),
                         ),
+                ),
+                const SizedBox(height: 16),
+                OutlinedButton.icon(
+                  onPressed: _isLoading ? null : _loginWithGoogle,
+                  icon: const Icon(Icons.g_mobiledata, size: 28),
+                  label: const Text('Registrarse con Google'),
+                  style: OutlinedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                  ),
                 ),
                 const SizedBox(height: 16),
                 Row(
