@@ -33,7 +33,7 @@ class CampusMapScreen extends StatefulWidget {
 class _CampusMapScreenState extends State<CampusMapScreen> {
   final _eventApiClient = EventApiClient();
   List<EventSummary> _allEvents = [];
-  HomeTab _selectedTab = HomeTab.events;
+  HomeTab _selectedTab = HomeTab.map;
   EventFilters _filters = const EventFilters();
   EventTimeScope _eventTimeScope = EventTimeScope.future;
   EventAttendanceScope _eventAttendanceScope = EventAttendanceScope.all;
@@ -56,6 +56,14 @@ class _CampusMapScreenState extends State<CampusMapScreen> {
       _isLoadingEvents = true;
       _eventsError = null;
     });
+
+    if (!AuthProvider.of(context).value.isAuthenticated) {
+      setState(() {
+        _eventsError = 'Para ver los eventos es necesario que inicies sesión.';
+        _isLoadingEvents = false;
+      });
+      return;
+    }
 
     try {
       final events = await _eventApiClient.fetchEvents(
