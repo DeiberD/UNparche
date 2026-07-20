@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../../state/auth_state.dart';
 import '../../main.dart';
 import 'login_screen.dart';
+import 'verify_email_screen.dart';
 
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key});
@@ -26,7 +27,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
     setState(() => _isLoading = true);
     try {
-      await AuthProvider.of(context).register(
+      final requiereVerificacion = await AuthProvider.of(context).register(
         _nameController.text.trim(),
         _lastNameController.text.trim(),
         _emailController.text.trim(),
@@ -35,10 +36,18 @@ class _RegisterScreenState extends State<RegisterScreen> {
         carrera: _carreraController.text.trim().isEmpty ? null : _carreraController.text.trim(),
       );
       if (mounted) {
-        Navigator.of(context).pushAndRemoveUntil(
-          MaterialPageRoute(builder: (_) => const AuthGate()),
-          (route) => false,
-        );
+        if (requiereVerificacion) {
+          Navigator.of(context).pushReplacement(
+            MaterialPageRoute(
+              builder: (_) => VerifyEmailScreen(correoInstitucional: _emailController.text.trim()),
+            ),
+          );
+        } else {
+          Navigator.of(context).pushAndRemoveUntil(
+            MaterialPageRoute(builder: (_) => const AuthGate()),
+            (route) => false,
+          );
+        }
       }
     } catch (e) {
       if (mounted) {

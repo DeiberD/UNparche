@@ -117,7 +117,7 @@ class AuthNotifier extends ValueNotifier<AuthState> {
     }
   }
 
-  Future<void> register(
+  Future<bool> register(
     String nombre,
     String apellido,
     String correo,
@@ -135,6 +135,13 @@ class AuthNotifier extends ValueNotifier<AuthState> {
         nickname,
         carrera: carrera,
       );
+
+      if (result['requiereVerificacion'] == true) {
+        value = value.copyWith(isLoading: false);
+        return true;
+      }
+
+      // Legacy fallback just in case
       final token = result['token'] as String;
       final userData = result['usuario'];
 
@@ -142,10 +149,17 @@ class AuthNotifier extends ValueNotifier<AuthState> {
       final user = User.fromJson(userData);
 
       value = value.copyWith(currentUser: user, token: token, isLoading: false);
+      return false;
     } catch (e) {
       value = value.copyWith(isLoading: false);
       rethrow;
     }
+  }
+
+  Future<void> loginWithToken(String token, Map<String, dynamic> userData) async {
+    await _storage.write(key: 'jwt_token', value: token);
+    final user = User.fromJson(userData);
+    value = value.copyWith(currentUser: user, token: token, isLoading: false);
   }
 
   Future<void> logout() async {
