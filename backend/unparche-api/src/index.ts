@@ -65,6 +65,15 @@ type CrearMensajeChatBody = {
 	timestamp_ms?: number;
 };
 
+type CrearSolicitudAmistadBody = {
+	id_solicitante?: number;
+	id_receptor?: number;
+};
+
+type ActualizarSolicitudAmistadBody = {
+	estado?: "ACEPTADA" | "RECHAZADA";
+};
+
 const EVENT_RETENTION_HOURS = 24;
 const EVENT_HISTORY_MONTHS = 6;
 const expiredEventCondition = `datetime(fecha_fin) <= datetime('now', '-${EVENT_RETENTION_HOURS} hours')`;
@@ -264,6 +273,35 @@ const verifyToken = async (request: Request, env: AppEnv) => {
 		return null;
 	}
 };
+
+const selectAmistadById = async (
+	db: D1Database,
+	idAmistad: number
+) =>
+	db
+		.prepare(
+			`SELECT
+				a.id_amistad,
+				a.estado,
+				a.fecha_solicitud,
+				a.fecha_respuesta,
+				a.id_solicitante,
+				a.id_receptor,
+				s.nombre || ' ' || s.apellido AS solicitante_nombre,
+				s.correo_institucional AS solicitante_correo,
+				s.foto_perfil AS solicitante_foto,
+				r.nombre || ' ' || r.apellido AS receptor_nombre,
+				r.correo_institucional AS receptor_correo,
+				r.foto_perfil AS receptor_foto
+			FROM amistad a
+			JOIN usuario s
+				ON s.id_usuario = a.id_solicitante
+			JOIN usuario r
+				ON r.id_usuario = a.id_receptor
+			WHERE a.id_amistad = ?`
+		)
+		.bind(idAmistad)
+		.first();
 
 export default {
 	async scheduled(_event, env, ctx): Promise<void> {
@@ -1997,6 +2035,375 @@ export default {
 					{ status: 500 }
 				);
 			}
+		}
+
+		// POST enviar solicitud de amistad (/amistades)
+		if (request.method === "POST" && url.pathname === "/amistades") {
+			let body: CrearSolicitudAmistadBody;
+
+			try {
+				body = await request.json();
+			} catch {
+				return json(
+					{ ok: false, error: "El body debe ser JSON valido." },
+					{ status: 400 }
+				);
+			}
+
+			const idSolicitante = toInteger(body.id_solicitante);
+			const idReceptor = toInteger(body.id_receptor);
+
+			if (idSolicitante === null || idReceptor === null) {
+				return json(
+					{
+						ok: false,
+						error:
+							"id_solicitante e id_receptor son obligatorios y deben ser enteros.",
+					},
+					{ status: 400 }
+				);
+			}
+
+			if (idSolicitante === idReceptor) {
+				return json(
+					{
+						ok: false,
+						error: "No puedes enviarte una solicitud de amistad.",
+					},
+					{ status: 400 }
+				);
+			}
+
+			const usuarios = await env.unparche_db
+				.prepare(
+					`SELECT id_usuario
+					FROM usuario
+					WHERE id_usuario IN (?, ?)
+					AND activo = 1`
+				)
+				.bind(idSolicitante, idReceptor)
+				.all();
+
+			if (usuarios.results.length !== 2) {
+				return json(
+					{
+						ok: false,
+						error: "Uno de los usuarios no existe o esta inactivo.",
+					},
+					{ status: 404 }
+				);
+			}
+
+			const relacionExistente = await env.unparche_db
+				.prepare(
+					`SELECT
+						id_amistad,
+						estado,
+						id_solicitante,
+						id_receptor
+					FROM amistad
+					WHERE (
+						id_solicitante = ?
+						AND id_receptor = ?
+					)
+					OR (
+						id_solicitante = ?
+						AND id_receptor = ?
+					)
+					ORDER BY id_amistad DESC
+					LIMIT 1`
+				)
+				.bind(
+					idSolicitante,
+					idReceptor,
+					idReceptor,
+					idSolicitante
+				)
+				.first<{
+					id_amistad: number;
+					estado: string;
+					id_solicitante: number;
+					id_receptor: number;
+				}>();
+
+			if (relacionExistente) {
+				if (relacionExistente.estado === "PENDIENTE") {
+					return json(
+						{
+							ok: false,
+							error: "Ya existe una solicitud pendiente entre estos usuarios.",
+						},
+						{ status: 409 }
+					);
+				}
+
+				if (relacionExistente.estado === "ACEPTADA") {
+					return json(
+						{
+							ok: false,
+							error: "Los usuarios ya son amigos.",
+						},
+						{ status: 409 }
+					);
+				}
+
+				await env.unparche_db
+					.prepare(
+						`UPDATE amistad
+						SET
+							id_solicitante = ?,
+							id_receptor = ?,
+							estado = 'PENDIENTE',
+							fecha_solicitud = CURRENT_TIMESTAMP,
+							fecha_respuesta = NULL
+						WHERE id_amistad = ?`
+					)
+					.bind(
+						idSolicitante,
+						idReceptor,
+						relacionExistente.id_amistad
+					)
+					.run();
+
+				const amistad = await selectAmistadById(
+					env.unparche_db,
+					relacionExistente.id_amistad
+				);
+
+				return json(
+					{
+						ok: true,
+						message: "Solicitud de amistad enviada.",
+						amistad,
+					},
+					{ status: 201 }
+				);
+			}
+
+			const result = await env.unparche_db
+				.prepare(
+					`INSERT INTO amistad (
+						id_solicitante,
+						id_receptor,
+						estado
+					) VALUES (?, ?, 'PENDIENTE')`
+				)
+				.bind(idSolicitante, idReceptor)
+				.run();
+
+			const amistad = await selectAmistadById(
+				env.unparche_db,
+				result.meta.last_row_id
+			);
+
+			return json(
+				{
+					ok: true,
+					message: "Solicitud de amistad enviada.",
+					amistad,
+				},
+				{ status: 201 }
+			);
+		}
+
+		// GET listar solicitudes de amistad recibidas (/usuarios/:id/solicitudes-amistad)
+		const solicitudesAmistadUsuarioMatch =
+			url.pathname.match(
+				/^\/usuarios\/(\d+)\/solicitudes-amistad$/
+			);
+
+		if (
+			request.method === "GET" &&
+			solicitudesAmistadUsuarioMatch
+		) {
+			const idUsuario = Number.parseInt(
+				solicitudesAmistadUsuarioMatch[1],
+				10
+			);
+
+			const usuario = await env.unparche_db
+				.prepare(
+					`SELECT id_usuario
+					FROM usuario
+					WHERE id_usuario = ?
+					AND activo = 1`
+				)
+				.bind(idUsuario)
+				.first();
+
+			if (!usuario) {
+				return json(
+					{ ok: false, error: "Usuario no encontrado." },
+					{ status: 404 }
+				);
+			}
+
+			const solicitudes = await env.unparche_db
+				.prepare(
+					`SELECT
+						a.id_amistad,
+						a.estado,
+						a.fecha_solicitud,
+						a.fecha_respuesta,
+						a.id_solicitante,
+						a.id_receptor,
+						u.nombre || ' ' || u.apellido AS solicitante_nombre,
+						u.correo_institucional AS solicitante_correo,
+						u.carrera AS solicitante_carrera,
+						u.informacion_personal AS solicitante_informacion,
+						u.foto_perfil AS solicitante_foto
+					FROM amistad a
+					JOIN usuario u
+						ON u.id_usuario = a.id_solicitante
+					WHERE a.id_receptor = ?
+					AND a.estado = 'PENDIENTE'
+					ORDER BY a.fecha_solicitud DESC`
+				)
+				.bind(idUsuario)
+				.all();
+
+			return json({
+				ok: true,
+				solicitudes: solicitudes.results,
+			});
+		}
+
+		// PATCH aceptar o rechazar amistad (/amistades/:id)
+		const amistadMatch = url.pathname.match(/^\/amistades\/(\d+)$/);
+
+		if (request.method === "PATCH" && amistadMatch) {
+			const idAmistad = Number.parseInt(
+				amistadMatch[1],
+				10
+			);
+
+			let body: ActualizarSolicitudAmistadBody;
+
+			try {
+				body = await request.json();
+			} catch {
+				return json(
+					{ ok: false, error: "El body debe ser JSON valido." },
+					{ status: 400 }
+				);
+			}
+
+			const estado = body.estado;
+
+			if (
+				estado !== "ACEPTADA" &&
+				estado !== "RECHAZADA"
+			) {
+				return json(
+					{
+						ok: false,
+						error:
+							"estado debe ser ACEPTADA o RECHAZADA.",
+					},
+					{ status: 400 }
+				);
+			}
+
+			const amistadActual = await env.unparche_db
+				.prepare(
+					`SELECT
+						id_amistad,
+						estado
+					FROM amistad
+					WHERE id_amistad = ?`
+				)
+				.bind(idAmistad)
+				.first<{ id_amistad: number; estado: string }>();
+
+			if (!amistadActual) {
+				return json(
+					{
+						ok: false,
+						error: "Solicitud de amistad no encontrada.",
+					},
+					{ status: 404 }
+				);
+			}
+
+			if (amistadActual.estado !== "PENDIENTE") {
+				return json(
+					{
+						ok: false,
+						error: "La solicitud ya fue respondida.",
+					},
+					{ status: 409 }
+				);
+			}
+
+			await env.unparche_db
+				.prepare(
+					`UPDATE amistad
+					SET
+						estado = ?,
+						fecha_respuesta = CURRENT_TIMESTAMP
+					WHERE id_amistad = ?`
+				)
+				.bind(estado, idAmistad)
+				.run();
+
+			const amistad = await selectAmistadById(
+				env.unparche_db,
+				idAmistad
+			);
+
+			return json({
+				ok: true,
+				message:
+					estado === "ACEPTADA"
+						? "Solicitud de amistad aceptada."
+						: "Solicitud de amistad rechazada.",
+				amistad,
+			});
+		}
+
+		// GET listar amigos (/usuarios/:id/amigos)
+		const amigosUsuarioMatch = url.pathname.match(/^\/usuarios\/(\d+)\/amigos$/);
+
+		if (request.method === "GET" && amigosUsuarioMatch) {
+			const idUsuario = Number.parseInt(
+				amigosUsuarioMatch[1],
+				10
+			);
+
+			const amigos = await env.unparche_db
+				.prepare(
+					`SELECT
+						a.id_amistad,
+						a.fecha_respuesta,
+						u.id_usuario,
+						u.nombre,
+						u.apellido,
+						u.correo_institucional,
+						u.carrera,
+						u.informacion_personal,
+						u.foto_perfil
+					FROM amistad a
+					JOIN usuario u
+						ON u.id_usuario =
+							CASE
+								WHEN a.id_solicitante = ?
+								THEN a.id_receptor
+								ELSE a.id_solicitante
+							END
+					WHERE (
+						a.id_solicitante = ?
+						OR a.id_receptor = ?
+					)
+					AND a.estado = 'ACEPTADA'
+					ORDER BY u.nombre, u.apellido`
+				)
+				.bind(idUsuario, idUsuario, idUsuario)
+				.all();
+
+			return json({
+				ok: true,
+				amigos: amigos.results,
+			});
 		}
 
 		return json({ ok: false, error: "Ruta no encontrada." }, { status: 404 });
