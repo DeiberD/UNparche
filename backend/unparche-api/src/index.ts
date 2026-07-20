@@ -5,6 +5,7 @@ type AppEnv = Env & {
 	unparche_db: D1Database;
 	CHAT_INTERNAL_TOKEN?: string;
 	JWT_SECRET: string;
+	GOOGLE_WEB_CLIENT_ID?: string;
 	RESEND_API_KEY?: string;
 };
 
@@ -579,34 +580,23 @@ export default {
 			
 			const idToken = body.id_token;
 			if (!idToken) return json({ ok: false, error: "Token de Google requerido" }, { status: 400 });
-
-			// Client IDs válidos de la app — cualquier token emitido para nuestra app
-			// tendrá uno de estos valores en el campo `aud`.
-			const VALID_AUDIENCE = [
-				"28638109204-kp4o4h10hab5pr7e80f44vuiaj97kikj.apps.googleusercontent.com", // Web / serverClientId
-				"28638109204-f6qhsdstgop8or1viqs3qiqa6m528146.apps.googleusercontent.com", // iOS
-				"28638109204-i3jt17gmurn0pf5rkbr6cap30bvgpsqc.apps.googleusercontent.com", // Android 1
-				"28638109204-s8m6okn54buk0mlrbsr4m139jglm8jgt.apps.googleusercontent.com", // Android 2
-			];
+			if (!env.GOOGLE_WEB_CLIENT_ID) {
+				return json({ ok: false, error: "Google Sign-In no esta configurado" }, { status: 503 });
+			}
 
 			try {
-				const verifyResp = await fetch(`https://oauth2.googleapis.com/tokeninfo?id_token=${idToken}`);
+				const verifyResp = await fetch(
+					`https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(idToken)}`,
+				);
 				if (!verifyResp.ok) {
 					return json({ ok: false, error: "Token de Google inválido" }, { status: 401 });
 				}
 				const payload: any = await verifyResp.json();
-
-				// Validar que el token fue emitido para nuestra app (previene token injection attacks)
-				if (!payload.aud || !VALID_AUDIENCE.includes(payload.aud)) {
-					return json({ ok: false, error: "Token no autorizado" }, { status: 401 });
+				if (payload.aud !== env.GOOGLE_WEB_CLIENT_ID || payload.email_verified !== "true") {
+					return json({ ok: false, error: "Token de Google inválido" }, { status: 401 });
 				}
-
-				// Validar que Google haya verificado el correo del usuario
-				if (payload.email_verified !== "true") {
-					return json({ ok: false, error: "Correo de Google no verificado" }, { status: 401 });
-				}
-
-				const correo_institucional = payload.email;
+				
+				const correo_institucional = typeof payload.email === "string" ? payload.email.toLowerCase() : "";
 				if (!correo_institucional || !correo_institucional.endsWith("@unal.edu.co")) {
 					return json({ ok: false, error: "Debe usar un correo institucional @unal.edu.co" }, { status: 403 });
 				}
