@@ -5,6 +5,7 @@ import 'theme/campus_colors.dart';
 
 import 'state/auth_state.dart';
 import 'screens/auth/login_screen.dart';
+import 'screens/auth/welcome_screen.dart';
 import 'screens/map/campus_map_screen.dart';
 
 const _mapboxAccessToken = String.fromEnvironment('ACCESS_TOKEN');
@@ -60,7 +61,7 @@ class AuthGate extends StatelessWidget {
         }
 
         if (!authState.isAuthenticated) {
-          return const LoginScreen();
+          return const WelcomeScreen();
         }
 
         return const CampusMapScreen();

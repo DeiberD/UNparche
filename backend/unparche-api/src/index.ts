@@ -408,24 +408,29 @@ export default {
 		if (request.method === "POST" && url.pathname === "/auth/register") {
 			let body: any;
 			try { body = await request.json(); } catch { return json({ ok: false, error: "JSON invalido" }, { status: 400 }); }
-			const { correo_institucional, contrasena, nombre, apellido } = body;
-
-			if (!correo_institucional || !correo_institucional.endsWith("@unal.edu.co") || !contrasena || !nombre) {
+			const { correo_institucional, contrasena, nombre, apellido, carrera, nickname } = body;
+			
+			if (!correo_institucional || !correo_institucional.endsWith("@unal.edu.co") || !contrasena || !nombre || !nickname) {
 				return json({ ok: false, error: "Datos invalidos o correo no institucional" }, { status: 400 });
+			}
+
+			const existingNickname = await env.unparche_db.prepare(`SELECT id_usuario FROM usuario WHERE nickname = ?`).bind(nickname.trim()).first();
+			if (existingNickname) {
+				return json({ ok: false, error: "nickname ya está en uso" }, { status: 409 });
 			}
 
 			try {
 				const hash = await bcrypt.hash(contrasena, 10);
 				const result = await env.unparche_db.prepare(
-					`INSERT INTO usuario (correo_institucional, contrasena_hash, nombre, apellido) VALUES (?, ?, ?, ?)`
-				).bind(correo_institucional.trim(), hash, nombre.trim(), apellido?.trim() || "").run();
+					`INSERT INTO usuario (correo_institucional, contrasena_hash, nombre, apellido, carrera, nickname) VALUES (?, ?, ?, ?, ?, ?)`
+				).bind(correo_institucional.trim(), hash, nombre.trim(), apellido?.trim() || "", carrera?.trim() || null, nickname.trim()).run();
 
 				const idUsuario = result.meta.last_row_id;
 				// exp: Unix timestamp de expiración (7 días desde ahora)
 				const exp = Math.floor(Date.now() / 1000) + 7 * 24 * 60 * 60;
 				const token = await jwt.sign({ id: idUsuario, correo: correo_institucional, exp }, env.JWT_SECRET || "default_secret_for_dev");
 
-				return json({ ok: true, usuario: { id_usuario: idUsuario, correo_institucional, nombre, apellido, nickname: null }, token }, { status: 201 });
+				return json({ ok: true, usuario: { id_usuario: idUsuario, correo_institucional, nombre, apellido, nickname: nickname.trim() }, token }, { status: 201 });
 			} catch (e: any) {
 				if (e.message?.includes("UNIQUE")) {
 					return json({ ok: false, error: "El correo ya está registrado" }, { status: 409 });

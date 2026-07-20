@@ -40,7 +40,9 @@ class AuthApiClient {
     String apellido,
     String correo,
     String contrasena,
-  ) async {
+    String nickname, {
+    String? carrera,
+  }) async {
     final request = await _httpClient.postUrl(
       _baseUri.resolve('/auth/register'),
     );
@@ -51,6 +53,8 @@ class AuthApiClient {
         'apellido': apellido,
         'correo_institucional': correo,
         'contrasena': contrasena,
+        'nickname': nickname,
+        if (carrera != null && carrera.isNotEmpty) 'carrera': carrera,
       }),
     );
 

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../state/auth_state.dart';
+import '../../main.dart';
 import '../../services/group_api_client.dart';
 import '../../models/group_summary.dart';
 
@@ -160,7 +161,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
             onPressed: () async {
               await AuthProvider.of(context).logout();
               if (context.mounted) {
-                Navigator.of(context).popUntil((route) => route.isFirst);
+                Navigator.of(context).pushAndRemoveUntil(
+                  MaterialPageRoute(builder: (_) => const AuthGate()),
+                  (route) => false,
+                );
               }
             },
             tooltip: 'Cerrar sesión',
