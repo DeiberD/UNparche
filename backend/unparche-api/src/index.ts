@@ -1660,7 +1660,8 @@ export default {
 					FROM anuncio a
 					JOIN usuario u ON u.id_usuario = a.id_autor
 					WHERE a.id_evento = ?
-					ORDER BY datetime(a.fecha_publicacion) DESC, a.id_anuncio DESC`
+					ORDER BY datetime(a.fecha_publicacion) DESC, a.id_anuncio DESC
+					LIMIT 1`
 				)
 				.bind(idEvento)
 				.all();
@@ -1712,21 +1713,9 @@ export default {
 			}
 
 			const result = await env.unparche_db
-				.prepare(
-					`INSERT INTO anuncio (contenido, id_autor, id_evento)
-					SELECT ?, ?, ?
-					WHERE NOT EXISTS (
-						SELECT 1 FROM anuncio WHERE id_evento = ?
-					)`
-				)
-				.bind(contenido, idAutor, idEvento, idEvento)
+				.prepare("INSERT INTO anuncio (contenido, id_autor, id_evento) VALUES (?, ?, ?)")
+				.bind(contenido, idAutor, idEvento)
 				.run();
-			if (Number(result.meta.changes ?? 0) === 0) {
-				return json(
-					{ ok: false, error: "El evento ya tiene un anuncio publicado." },
-					{ status: 409 }
-				);
-			}
 			const idAnuncio = Number(result.meta.last_row_id);
 			const anuncio = await env.unparche_db
 				.prepare(

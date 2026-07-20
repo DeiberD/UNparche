@@ -115,7 +115,9 @@ class _EventAnnouncementsSectionState extends State<EventAnnouncementsSection> {
                 content: content,
               ));
       if (!mounted) return;
-      setState(() => _announcements = [announcement, ..._announcements]);
+      // The event card presents the newest announcement, while the API keeps
+      // previous records in the database.
+      setState(() => _announcements = [announcement]);
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(const SnackBar(content: Text('Anuncio publicado.')));
@@ -137,11 +139,8 @@ class _EventAnnouncementsSectionState extends State<EventAnnouncementsSection> {
 
   @override
   Widget build(BuildContext context) {
-    final canPublishFirstAnnouncement =
-        widget.canPublish &&
-        !_isLoading &&
-        _errorMessage == null &&
-        _announcements.isEmpty;
+    final canPublishAnnouncement =
+        widget.canPublish && !_isLoading && _errorMessage == null;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -160,7 +159,7 @@ class _EventAnnouncementsSectionState extends State<EventAnnouncementsSection> {
                 ),
               ),
             ),
-            if (canPublishFirstAnnouncement)
+            if (canPublishAnnouncement)
               IconButton.filled(
                 tooltip: 'Publicar anuncio',
                 onPressed: _isPublishing ? null : _openPublishDialog,

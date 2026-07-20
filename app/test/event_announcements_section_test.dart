@@ -79,11 +79,11 @@ void main() {
       findsOneWidget,
     );
     expect(find.text('Anuncio publicado.'), findsOneWidget);
-    expect(find.byTooltip('Publicar anuncio'), findsNothing);
+    expect(find.byTooltip('Publicar anuncio'), findsOneWidget);
   });
 
   testWidgets(
-    'organizer cannot publish when the event already has an announcement',
+    'a new announcement replaces the previous one in the event detail',
     (tester) async {
       await tester.pumpWidget(
         _testApp(
@@ -98,12 +98,27 @@ void main() {
               authorNickname: null,
             ),
           ],
+          publisher: (content) async => EventAnnouncement(
+            id: 4,
+            content: content,
+            publishedAt: DateTime(2026, 7, 20, 13),
+            authorId: 1,
+            authorName: 'Organizador UN',
+            authorNickname: null,
+          ),
         ),
       );
       await tester.pumpAndSettle();
 
       expect(find.text('Anuncio existente'), findsOneWidget);
-      expect(find.byTooltip('Publicar anuncio'), findsNothing);
+      await tester.tap(find.byTooltip('Publicar anuncio'));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextField), 'Anuncio mas reciente');
+      await tester.tap(find.widgetWithText(FilledButton, 'Publicar'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Anuncio existente'), findsNothing);
+      expect(find.text('Anuncio mas reciente'), findsOneWidget);
     },
   );
 }
