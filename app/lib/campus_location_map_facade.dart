@@ -1,6 +1,6 @@
 import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart';
 
-import 'location_picker_state.dart';
+import 'state/location_picker_state.dart';
 
 /// Facade over the Mapbox operations required by the location picker.
 ///

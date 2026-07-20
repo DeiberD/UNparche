@@ -1,39 +1,28 @@
 import 'package:flutter/material.dart';
-import 'auth_state.dart';
-import 'login_screen.dart';
+import '../../state/auth_state.dart';
+import 'register_screen.dart';
 
-class RegisterScreen extends StatefulWidget {
-  const RegisterScreen({super.key});
+class LoginScreen extends StatefulWidget {
+  const LoginScreen({super.key});
 
   @override
-  State<RegisterScreen> createState() => _RegisterScreenState();
+  State<LoginScreen> createState() => _LoginScreenState();
 }
 
-class _RegisterScreenState extends State<RegisterScreen> {
+class _LoginScreenState extends State<LoginScreen> {
   final _formKey = GlobalKey<FormState>();
-  final _nameController = TextEditingController();
-  final _lastNameController = TextEditingController();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
-  final _confirmPasswordController = TextEditingController();
   bool _isLoading = false;
 
-  void _register() async {
+  void _login() async {
     if (!_formKey.currentState!.validate()) return;
 
     setState(() => _isLoading = true);
     try {
-      await AuthProvider.of(context).register(
-        _nameController.text.trim(),
-        _lastNameController.text.trim(),
-        _emailController.text.trim(),
-        _passwordController.text,
-      );
-      if (mounted) {
-        Navigator.pop(
-          context,
-        ); // Regresa a la pantalla principal o la anterior tras login exitoso
-      }
+      await AuthProvider.of(
+        context,
+      ).login(_emailController.text.trim(), _passwordController.text);
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -45,13 +34,16 @@ class _RegisterScreenState extends State<RegisterScreen> {
     }
   }
 
+  void _showNotImplemented(String feature) {
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text('$feature está en construcción.')));
+  }
+
   @override
   void dispose() {
-    _nameController.dispose();
-    _lastNameController.dispose();
     _emailController.dispose();
     _passwordController.dispose();
-    _confirmPasswordController.dispose();
     super.dispose();
   }
 
@@ -60,17 +52,18 @@ class _RegisterScreenState extends State<RegisterScreen> {
     const ink = Color(0xFF263020);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Registro')),
+      appBar: AppBar(title: const Text('Iniciar Sesión')),
       body: Center(
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(24.0),
           child: Form(
             key: _formKey,
             child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 const Text(
-                  'Crea tu cuenta',
+                  'Bienvenido a UNparche',
                   style: TextStyle(
                     fontSize: 24,
                     fontWeight: FontWeight.bold,
@@ -80,26 +73,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 ),
                 const SizedBox(height: 32),
                 TextFormField(
-                  controller: _nameController,
-                  decoration: const InputDecoration(
-                    labelText: 'Nombre',
-                    border: OutlineInputBorder(),
-                  ),
-                  validator: (value) =>
-                      (value == null || value.isEmpty) ? 'Requerido' : null,
-                ),
-                const SizedBox(height: 16),
-                TextFormField(
-                  controller: _lastNameController,
-                  decoration: const InputDecoration(
-                    labelText: 'Apellido',
-                    border: OutlineInputBorder(),
-                  ),
-                  validator: (value) =>
-                      (value == null || value.isEmpty) ? 'Requerido' : null,
-                ),
-                const SizedBox(height: 16),
-                TextFormField(
                   controller: _emailController,
                   decoration: const InputDecoration(
                     labelText: 'Correo Institucional',
@@ -108,8 +81,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   keyboardType: TextInputType.emailAddress,
                   validator: (value) {
                     if (value == null || value.isEmpty) return 'Requerido';
-                    if (!value.endsWith('@unal.edu.co'))
-                      return 'Debe ser un correo @unal.edu.co';
+                    if (!value.endsWith('@unal.edu.co')) {
+                      return 'Debe ser correo @unal.edu.co';
+                    }
                     return null;
                   },
                 ),
@@ -121,29 +95,21 @@ class _RegisterScreenState extends State<RegisterScreen> {
                     border: OutlineInputBorder(),
                   ),
                   obscureText: true,
-                  validator: (value) {
-                    if (value == null || value.isEmpty) return 'Requerida';
-                    if (value.length < 6) return 'Mínimo 6 caracteres';
-                    return null;
-                  },
+                  validator: (value) =>
+                      (value == null || value.isEmpty) ? 'Requerida' : null,
                 ),
-                const SizedBox(height: 16),
-                TextFormField(
-                  controller: _confirmPasswordController,
-                  decoration: const InputDecoration(
-                    labelText: 'Confirmar Contraseña',
-                    border: OutlineInputBorder(),
+                const SizedBox(height: 8),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: TextButton(
+                    onPressed: () =>
+                        _showNotImplemented('Restablecer contraseña'),
+                    child: const Text('¿Olvidaste tu contraseña?'),
                   ),
-                  obscureText: true,
-                  validator: (value) {
-                    if (value != _passwordController.text)
-                      return 'Las contraseñas no coinciden';
-                    return null;
-                  },
                 ),
-                const SizedBox(height: 32),
+                const SizedBox(height: 24),
                 ElevatedButton(
-                  onPressed: _isLoading ? null : _register,
+                  onPressed: _isLoading ? null : _login,
                   style: ElevatedButton.styleFrom(
                     backgroundColor: ink,
                     foregroundColor: Colors.white,
@@ -159,25 +125,35 @@ class _RegisterScreenState extends State<RegisterScreen> {
                           ),
                         )
                       : const Text(
-                          'Registrarse',
+                          'Iniciar sesión',
                           style: TextStyle(fontSize: 16),
                         ),
                 ),
                 const SizedBox(height: 16),
+                OutlinedButton.icon(
+                  onPressed: () =>
+                      _showNotImplemented('Inicio de sesión con Google'),
+                  icon: const Icon(Icons.g_mobiledata, size: 28),
+                  label: const Text('Iniciar sesión con Google (Próximamente)'),
+                  style: OutlinedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                  ),
+                ),
+                const SizedBox(height: 32),
                 Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    const Text('¿Ya tienes cuenta?'),
+                    const Text('¿No tienes cuenta?'),
                     TextButton(
                       onPressed: () {
                         Navigator.pushReplacement(
                           context,
                           MaterialPageRoute(
-                            builder: (_) => const LoginScreen(),
+                            builder: (_) => const RegisterScreen(),
                           ),
                         );
                       },
-                      child: const Text('Inicia sesión'),
+                      child: const Text('Regístrate'),
                     ),
                   ],
                 ),

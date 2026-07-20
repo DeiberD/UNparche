@@ -1,0 +1,1048 @@
+import 'dart:async';
+import 'dart:convert';
+import 'package:flutter/material.dart';
+import '../../models/event_api_exception.dart';
+import '../../models/event_filters.dart';
+import '../../widgets/map/map_filter_bottom_sheet.dart';
+
+import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart';
+
+import '../../services/event_api_client.dart';
+import '../../models/event_summary.dart';
+import '../../models/event_scopes.dart';
+import '../../event_cluster_data.dart';
+import '../profile/profile_screen.dart';
+import '../events/events_list_view.dart';
+import '../events/event_detail_screen.dart';
+import '../groups/view_groups_screen.dart';
+import '../../state/auth_state.dart';
+import '../auth/login_screen.dart';
+import '../../widgets/common/bottom_nav_bar.dart';
+import '../events/create_event_screen.dart';
+import '../../theme/campus_colors.dart';
+
+const _mapboxAccessToken = String.fromEnvironment('ACCESS_TOKEN');
+
+class CampusMapScreen extends StatefulWidget {
+  const CampusMapScreen({super.key});
+
+  @override
+  State<CampusMapScreen> createState() => _CampusMapScreenState();
+}
+
+class _CampusMapScreenState extends State<CampusMapScreen> {
+  final _eventApiClient = EventApiClient();
+  List<EventSummary> _allEvents = [];
+  HomeTab _selectedTab = HomeTab.events;
+  EventFilters _filters = const EventFilters();
+  EventTimeScope _eventTimeScope = EventTimeScope.future;
+  EventAttendanceScope _eventAttendanceScope = EventAttendanceScope.all;
+  EventSummary? _focusedEvent;
+  bool _isLoadingEvents = false;
+  String? _eventsError;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _loadVisibleEvents());
+  }
+
+  Future<void> _loadVisibleEvents() async {
+    if (_isLoadingEvents) {
+      return;
+    }
+
+    setState(() {
+      _isLoadingEvents = true;
+      _eventsError = null;
+    });
+
+    try {
+      final events = await _eventApiClient.fetchEvents(
+        viewerUserId: AuthProvider.of(context).value.currentUser!.id,
+      );
+      final sortedEvents = [...events]
+        ..sort((a, b) {
+          final aStart = a.start;
+          final bStart = b.start;
+          if (aStart == null && bStart == null) {
+            return a.title.compareTo(b.title);
+          }
+          if (aStart == null) {
+            return 1;
+          }
+          if (bStart == null) {
+            return -1;
+          }
+          return aStart.compareTo(bStart);
+        });
+
+      if (!mounted) {
+        return;
+      }
+
+      setState(() => _allEvents = sortedEvents);
+    } on EventApiException catch (error) {
+      if (!mounted) {
+        return;
+      }
+
+      setState(() => _eventsError = error.message);
+    } catch (_) {
+      if (!mounted) {
+        return;
+      }
+
+      setState(() => _eventsError = 'No se pudieron cargar los eventos.');
+    } finally {
+      if (mounted) {
+        setState(() => _isLoadingEvents = false);
+      }
+    }
+  }
+
+  Future<void> _openCreateEvent(BuildContext context) async {
+    final authState = AuthProvider.of(context).value;
+    if (!authState.isAuthenticated) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Necesitas iniciar sesión para crear un evento.'),
+        ),
+      );
+      Navigator.of(
+        context,
+      ).push(MaterialPageRoute(builder: (_) => const LoginScreen()));
+      return;
+    }
+
+    final messenger = ScaffoldMessenger.of(context);
+    final currentUser = authState.currentUser!;
+    final event = await Navigator.of(context).push<CreatedEventDraft>(
+      MaterialPageRoute(
+        builder: (_) => CreateEventScreen(organizerId: currentUser.id),
+      ),
+    );
+
+    if (event == null) {
+      return;
+    }
+
+    final eventSummary = EventSummary(
+      id: event.id,
+      title: event.title,
+      description: event.description,
+      start: event.start,
+      durationMinutes: event.durationMinutes,
+      end: event.end,
+      latitude: event.latitude,
+      longitude: event.longitude,
+      visibility: event.apiVisibility,
+      organizerId: currentUser.id,
+      organizerName: '${currentUser.nombre} ${currentUser.apellido}',
+      organizerEmail: null,
+      organizerCareer: null,
+      organizerInfo: null,
+      groupId: event.groupId,
+      groupName: event.groupName,
+      groupDescription: null,
+      groupCategory: null,
+      groupIsOfficial: null,
+      groupVerificationStatus: null,
+      eventTypeId: event.eventTypeId,
+      eventTypeName: null,
+      status: 'PROGRAMADO',
+      chatEnabled: event.chatEnabled,
+      attendanceStatus: null,
+    );
+    setState(() {
+      _allEvents = [..._allEvents, eventSummary]
+        ..sort(
+          (a, b) =>
+              (a.start ?? DateTime(9999)).compareTo(b.start ?? DateTime(9999)),
+        );
+      _focusedEvent = eventSummary;
+    });
+    _loadVisibleEvents();
+
+    messenger.showSnackBar(
+      SnackBar(content: Text('Evento "${event.title}" publicado.')),
+    );
+  }
+
+  List<EventSummary> get _filteredEvents {
+    return _eventsMatchingFilters(includeDate: true);
+  }
+
+  List<EventSummary> get _eventsForCalendar {
+    return _eventsMatchingFilters(includeDate: false);
+  }
+
+  List<EventSummary> _eventsMatchingFilters({required bool includeDate}) {
+    final now = DateTime.now();
+    return _allEvents.where((event) {
+      if (!_matchesTimeScope(event, now)) {
+        return false;
+      }
+
+      if (_eventAttendanceScope == EventAttendanceScope.confirmed &&
+          !event.hasConfirmedAttendance) {
+        return false;
+      }
+
+      if (_eventAttendanceScope == EventAttendanceScope.created &&
+          event.organizerId != AuthProvider.of(context).value.currentUser!.id) {
+        return false;
+      }
+
+      final date = _filters.date;
+      if (includeDate && date != null) {
+        final start = event.start;
+        if (start == null || !DateUtils.isSameDay(start.toLocal(), date)) {
+          return false;
+        }
+      }
+
+      final eventTypeId = _filters.eventTypeId;
+      if (eventTypeId != null && event.eventTypeId != eventTypeId) {
+        return false;
+      }
+
+      final groupId = _filters.groupId;
+      if (groupId != null && event.groupId != groupId) {
+        return false;
+      }
+
+      return true;
+    }).toList();
+  }
+
+  bool _matchesTimeScope(EventSummary event, DateTime now) {
+    final eventStart = event.start;
+    final eventEnd = event.end;
+    if (eventStart == null || eventEnd == null) {
+      return false;
+    }
+
+    final localStart = eventStart.toLocal();
+    final next7Days = now.add(const Duration(days: 7));
+
+    return switch (_eventTimeScope) {
+      EventTimeScope.future =>
+        event.isActive &&
+            !localStart.isBefore(now) &&
+            !localStart.isAfter(next7Days),
+      EventTimeScope.past =>
+        event.status != 'CANCELADO' && !eventEnd.toLocal().isAfter(now),
+    };
+  }
+
+  List<int> get _availableGroupIds {
+    final groupIds =
+        _allEvents
+            .map((event) => event.groupId)
+            .whereType<int>()
+            .toSet()
+            .toList()
+          ..sort();
+    return groupIds;
+  }
+
+  Future<void> _pickDateFilter() async {
+    final now = DateTime.now();
+    final firstDate = _eventTimeScope == EventTimeScope.past
+        ? DateTime(now.year, now.month - 6)
+        : DateTime(now.year, now.month, now.day);
+    final lastDate = _eventTimeScope == EventTimeScope.past
+        ? DateTime(
+            now.year,
+            now.month,
+            now.day,
+          ).subtract(const Duration(days: 1))
+        : DateTime(now.year, now.month, now.day).add(const Duration(days: 7));
+    final selectedDate = _filters.date;
+    final defaultDate = _eventTimeScope == EventTimeScope.past
+        ? lastDate
+        : firstDate;
+    final initialDate =
+        selectedDate != null &&
+            !selectedDate.isBefore(firstDate) &&
+            !selectedDate.isAfter(lastDate)
+        ? selectedDate
+        : defaultDate;
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: initialDate,
+      firstDate: firstDate,
+      lastDate: lastDate,
+    );
+
+    if (picked != null) {
+      setState(() => _filters = _filters.copyWith(date: picked));
+    }
+  }
+
+  Future<void> _pickEventTypeFilter() async {
+    final selected = await showModalBottomSheet<int?>(
+      context: context,
+      backgroundColor: campusBackground,
+      builder: (_) => const EventTypeFilterSheet(),
+    );
+
+    if (!mounted) {
+      return;
+    }
+
+    setState(() {
+      _filters = selected == null
+          ? _filters.copyWith(clearEventType: true)
+          : _filters.copyWith(eventTypeId: selected);
+    });
+  }
+
+  Future<void> _pickGroupFilter() async {
+    final selected = await showModalBottomSheet<int?>(
+      context: context,
+      backgroundColor: campusBackground,
+      builder: (_) => GroupFilterSheet(groupIds: _availableGroupIds),
+    );
+
+    if (!mounted) {
+      return;
+    }
+
+    setState(() {
+      _filters = selected == null
+          ? _filters.copyWith(clearGroup: true)
+          : _filters.copyWith(groupId: selected);
+    });
+  }
+
+  void _clearFilters() {
+    setState(() => _filters = const EventFilters());
+  }
+
+  Future<void> _openEventDetails(EventSummary event) async {
+    final shouldOpenLocation = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        builder: (_) => EventDetailScreen(
+          event: event,
+          eventApiClient: _eventApiClient,
+          currentUserId: AuthProvider.of(context).value.currentUser!.id,
+          onAttendanceChanged: _replaceEvent,
+          onDeleted: _removeEvent,
+        ),
+      ),
+    );
+
+    if (shouldOpenLocation == true && mounted) {
+      setState(() {
+        _selectedTab = HomeTab.map;
+        _focusedEvent = event;
+      });
+    }
+  }
+
+  void _replaceEvent(EventSummary updatedEvent) {
+    setState(() {
+      _allEvents =
+          _allEvents
+              .map(
+                (event) => event.id == updatedEvent.id ? updatedEvent : event,
+              )
+              .toList()
+            ..sort(
+              (a, b) => (a.start ?? DateTime(9999)).compareTo(
+                b.start ?? DateTime(9999),
+              ),
+            );
+
+      if (_focusedEvent?.id == updatedEvent.id) {
+        _focusedEvent = updatedEvent;
+      }
+    });
+  }
+
+  void _removeEvent(int eventId) {
+    setState(() {
+      _allEvents = _allEvents.where((event) => event.id != eventId).toList();
+      if (_focusedEvent?.id == eventId) _focusedEvent = null;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final filteredEvents = _filteredEvents;
+    final showEventControls = _selectedTab != HomeTab.groups;
+
+    return Scaffold(
+      body: SafeArea(
+        child: Stack(
+          children: [
+            Positioned.fill(
+              child: switch (_selectedTab) {
+                HomeTab.map =>
+                  _mapboxAccessToken.isEmpty
+                      ? const MissingMapboxTokenView()
+                      : UNALMap(
+                          events: filteredEvents,
+                          focusedEvent: _focusedEvent,
+                          onEventTap: _openEventDetails,
+                        ),
+                HomeTab.events => EventsListView(
+                  events: filteredEvents,
+                  calendarEvents: _eventsForCalendar,
+                  selectedDate: _filters.date,
+                  timeScope: _eventTimeScope,
+                  isLoading: _isLoadingEvents,
+                  errorMessage: _eventsError,
+                  onRefresh: _loadVisibleEvents,
+                  onEventTap: _openEventDetails,
+                  onDateSelected: (date) {
+                    setState(() {
+                      _filters = date == null
+                          ? _filters.copyWith(clearDate: true)
+                          : _filters.copyWith(date: date);
+                    });
+                  },
+                  onTimeScopeChanged: (scope) {
+                    setState(() {
+                      _eventTimeScope = scope;
+                      _filters = _filters.copyWith(clearDate: true);
+                    });
+                  },
+                  attendanceScope: _eventAttendanceScope,
+                  onAttendanceScopeChanged: (scope) {
+                    setState(() {
+                      _eventAttendanceScope = scope;
+                      _filters = _filters.copyWith(clearDate: true);
+                    });
+                  },
+                ),
+                HomeTab.groups => const GroupsScreen(),
+              },
+            ),
+            const Positioned(left: 16, right: 16, top: 14, child: MapHeader()),
+            if (showEventControls)
+              Positioned(
+                left: 16,
+                right: 16,
+                top: 82,
+                child: EventFiltersBar(
+                  filters: _filters,
+                  onDatePressed: _pickDateFilter,
+                  onTypePressed: _pickEventTypeFilter,
+                  onGroupPressed: _pickGroupFilter,
+                  onClearPressed: _filters.hasActiveFilters
+                      ? _clearFilters
+                      : null,
+                ),
+              ),
+            if (showEventControls && (_isLoadingEvents || _eventsError != null))
+              Positioned(
+                left: 18,
+                right: 18,
+                top: 134,
+                child: MapStatusMessage(
+                  message: _eventsError ?? 'Cargando eventos...',
+                  hasError: _eventsError != null,
+                ),
+              ),
+            Positioned(
+              left: 12,
+              right: 12,
+              bottom: 12,
+              child: BottomNavBar(
+                selectedTab: _selectedTab,
+                onTabSelected: (tab) => setState(() => _selectedTab = tab),
+              ),
+            ),
+            if (showEventControls)
+              Positioned(
+                right: 18,
+                bottom: 104,
+                child: FloatingActionButton(
+                  heroTag: 'createEvent',
+                  tooltip: 'Crear evento',
+                  backgroundColor: campusInk,
+                  foregroundColor: Colors.white,
+                  onPressed: () => _openCreateEvent(context),
+                  child: const Icon(Icons.add),
+                ),
+              ),
+            if (_selectedTab == HomeTab.map)
+              Positioned(
+                right: 18,
+                bottom: 170,
+                child: FloatingActionButton.small(
+                  heroTag: 'refreshEvents',
+                  tooltip: 'Actualizar eventos',
+                  backgroundColor: campusSurface,
+                  foregroundColor: campusInk,
+                  onPressed: _loadVisibleEvents,
+                  child: const Icon(Icons.refresh),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class UNALMap extends StatefulWidget {
+  const UNALMap({
+    super.key,
+    required this.events,
+    required this.onEventTap,
+    this.focusedEvent,
+  });
+
+  final List<EventSummary> events;
+  final ValueChanged<EventSummary> onEventTap;
+  final EventSummary? focusedEvent;
+
+  @override
+  State<UNALMap> createState() => _UNALMapState();
+}
+
+class _UNALMapState extends State<UNALMap> {
+  MapboxMap? _mapboxMap;
+  final Map<String, EventSummary> _eventsByFeatureKey = {};
+  bool _eventLayersReady = false;
+  String? _statusMessage = 'Cargando mapa...';
+  bool _hasError = false;
+
+  static const _clusterTapInteractionId = 'event-cluster-tap';
+  static const _eventTapInteractionId = 'unclustered-event-tap';
+
+  static final _campusBounds = CoordinateBounds(
+    // Approximate UNAL Bogota campus box. We can tighten it later with exact GIS data.
+    southwest: Point(coordinates: Position(-74.0985, 4.6255)),
+    northeast: Point(coordinates: Position(-74.0725, 4.6505)),
+    infiniteBounds: false,
+  );
+
+  Future<void> _onMapCreated(MapboxMap mapboxMap) async {
+    _mapboxMap = mapboxMap;
+    await mapboxMap.setBounds(
+      CameraBoundsOptions(
+        bounds: _campusBounds,
+        minZoom: 14.0,
+        maxZoom: 25,
+        minPitch: 0,
+        maxPitch: 45,
+      ),
+    );
+
+    mapboxMap.addInteraction(
+      TapInteraction(
+        FeaturesetDescriptor(layerId: eventClustersLayerId),
+        (feature, context) => _handleClusterTap(feature, context),
+      ),
+      interactionID: _clusterTapInteractionId,
+    );
+    mapboxMap.addInteraction(
+      TapInteraction(
+        FeaturesetDescriptor(layerId: unclusteredEventsLayerId),
+        (feature, _) => _handleEventTap(feature.properties),
+      ),
+      interactionID: _eventTapInteractionId,
+    );
+  }
+
+  @override
+  void dispose() {
+    _mapboxMap?.removeInteraction(_clusterTapInteractionId);
+    _mapboxMap?.removeInteraction(_eventTapInteractionId);
+    super.dispose();
+  }
+
+  @override
+  void didUpdateWidget(covariant UNALMap oldWidget) {
+    super.didUpdateWidget(oldWidget);
+
+    if (oldWidget.events != widget.events ||
+        oldWidget.focusedEvent?.id != widget.focusedEvent?.id) {
+      _syncEventMarkers();
+    }
+  }
+
+  Future<void> _syncEventMarkers() async {
+    final mapboxMap = _mapboxMap;
+    if (mapboxMap == null || !_eventLayersReady) {
+      return;
+    }
+
+    _eventsByFeatureKey.clear();
+    for (var index = 0; index < widget.events.length; index++) {
+      final event = widget.events[index];
+      if (event.hasLocation) {
+        _eventsByFeatureKey[eventClusterKey(event, index)] = event;
+      }
+    }
+
+    final source = await mapboxMap.style.getSource(eventClusterSourceId);
+    await (source as GeoJsonSource).updateGeoJSON(
+      jsonEncode(buildEventClusterFeatureCollection(widget.events)),
+    );
+
+    final latest = widget.focusedEvent ?? widget.events.lastOrNull;
+    if (latest != null && latest.latitude != null && latest.longitude != null) {
+      await _mapboxMap?.setCamera(
+        CameraOptions(
+          center: Point(
+            coordinates: Position(latest.longitude!, latest.latitude!),
+          ),
+          zoom: 16.5,
+        ),
+      );
+    }
+  }
+
+  Future<void> _setupEventLayers() async {
+    final mapboxMap = _mapboxMap;
+    if (mapboxMap == null) {
+      return;
+    }
+
+    await mapboxMap.style.addSource(
+      GeoJsonSource(
+        id: eventClusterSourceId,
+        data: jsonEncode(buildEventClusterFeatureCollection(widget.events)),
+        cluster: true,
+        clusterRadius: eventClusterRadius,
+        clusterMaxZoom: eventClusterMaxZoom,
+        clusterMinPoints: 2,
+      ),
+    );
+    await mapboxMap.style.addLayer(
+      CircleLayer(
+        id: eventClustersLayerId,
+        sourceId: eventClusterSourceId,
+        filter: const ['has', 'point_count'],
+        circleColor: campusInk.toARGB32(),
+        circleRadiusExpression: const [
+          'step',
+          ['get', 'point_count'],
+          18.0,
+          10,
+          23.0,
+          25,
+          28.0,
+        ],
+        circleStrokeColor: Colors.white.toARGB32(),
+        circleStrokeWidth: 3,
+      ),
+    );
+    await mapboxMap.style.addLayer(
+      SymbolLayer(
+        id: eventClusterCountLayerId,
+        sourceId: eventClusterSourceId,
+        filter: const ['has', 'point_count'],
+        textFieldExpression: const ['get', 'point_count_abbreviated'],
+        textSize: 13,
+        textColor: Colors.white.toARGB32(),
+        textAllowOverlap: true,
+      ),
+    );
+    await mapboxMap.style.addLayer(
+      CircleLayer(
+        id: unclusteredEventsLayerId,
+        sourceId: eventClusterSourceId,
+        filter: const [
+          '!',
+          ['has', 'point_count'],
+        ],
+        circleColorExpression: const [
+          'match',
+          ['get', 'event_type_id'],
+          1,
+          '#4267B2',
+          2,
+          '#8B4C9D',
+          3,
+          '#2E7D32',
+          4,
+          '#C2410C',
+          '#263020',
+        ],
+        circleRadius: 8,
+        circleStrokeColor: Colors.white.toARGB32(),
+        circleStrokeWidth: 3,
+      ),
+    );
+
+    _eventLayersReady = true;
+    await _syncEventMarkers();
+  }
+
+  void _handleEventTap(Map<String, Object?> properties) {
+    final event = _eventsByFeatureKey[properties['event_key']?.toString()];
+    if (event != null) {
+      widget.onEventTap(event);
+    }
+  }
+
+  Future<void> _handleClusterTap(
+    FeaturesetFeature feature,
+    MapContentGestureContext context,
+  ) async {
+    final mapboxMap = _mapboxMap;
+    if (mapboxMap == null) {
+      return;
+    }
+
+    final clusterFeature = <String?, Object?>{
+      'type': 'Feature',
+      'id': feature.id?.id,
+      'geometry': feature.geometry,
+      'properties': feature.properties,
+    };
+
+    final leaves = await mapboxMap.getGeoJsonClusterLeaves(
+      eventClusterSourceId,
+      clusterFeature,
+      feature.properties['point_count'] as int?,
+      0,
+    );
+    final events = <EventSummary>[];
+    for (final leaf in leaves.featureCollection ?? const []) {
+      final properties = leaf?['properties'];
+      if (properties is! Map) {
+        continue;
+      }
+      final event = _eventsByFeatureKey[properties['event_key']?.toString()];
+      if (event != null) {
+        events.add(event);
+      }
+    }
+
+    final expansion = await mapboxMap.getGeoJsonClusterExpansionZoom(
+      eventClusterSourceId,
+      clusterFeature,
+    );
+    final expansionZoom = double.tryParse(expansion.value ?? '');
+    if (expansionZoom != null) {
+      await mapboxMap.easeTo(
+        CameraOptions(center: context.point, zoom: expansionZoom),
+        MapAnimationOptions(duration: 450),
+      );
+    }
+
+    if (!mounted || events.isEmpty) {
+      return;
+    }
+
+    final selected = await showModalBottomSheet<EventSummary>(
+      context: this.context,
+      backgroundColor: campusBackground,
+      showDragHandle: true,
+      builder: (_) => _EventClusterSheet(events: events),
+    );
+    if (selected != null) {
+      widget.onEventTap(selected);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      children: [
+        MapWidget(
+          key: const ValueKey('campusMap'),
+          styleUri: MapboxStyles.MAPBOX_STREETS,
+          viewport: CameraViewportState(
+            center: Point(coordinates: Position(-74.0840, 4.6382)),
+            zoom: 15.6,
+          ),
+          onMapCreated: _onMapCreated,
+          onStyleLoadedListener: (_) async {
+            try {
+              await _setupEventLayers();
+              if (mounted) {
+                setState(() {
+                  _statusMessage = null;
+                  _hasError = false;
+                });
+              }
+            } catch (_) {
+              if (mounted) {
+                setState(() {
+                  _statusMessage = 'No se pudieron mostrar los eventos.';
+                  _hasError = true;
+                });
+              }
+            }
+          },
+          onMapLoadErrorListener: (error) {
+            setState(() {
+              _statusMessage = 'Mapbox: ${error.type.name} - ${error.message}';
+              _hasError = true;
+            });
+          },
+        ),
+        if (_statusMessage != null)
+          Positioned(
+            left: 18,
+            right: 18,
+            bottom: 104,
+            child: MapStatusMessage(
+              message: _statusMessage!,
+              hasError: _hasError,
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+class _EventClusterSheet extends StatelessWidget {
+  const _EventClusterSheet({required this.events});
+
+  final List<EventSummary> events;
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      child: ConstrainedBox(
+        constraints: BoxConstraints(
+          maxHeight: MediaQuery.sizeOf(context).height * 0.58,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 4, 20, 12),
+              child: Text(
+                '${events.length} eventos en esta zona',
+                style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                  color: campusInk,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+            Flexible(
+              child: ListView.separated(
+                shrinkWrap: true,
+                padding: const EdgeInsets.fromLTRB(12, 0, 12, 16),
+                itemCount: events.length,
+                separatorBuilder: (_, _) => const Divider(height: 1),
+                itemBuilder: (context, index) {
+                  final event = events[index];
+                  return ListTile(
+                    leading: const Icon(
+                      Icons.location_on_outlined,
+                      color: campusInk,
+                    ),
+                    title: Text(
+                      event.title.trim().isEmpty
+                          ? 'Evento sin titulo'
+                          : event.title,
+                    ),
+                    subtitle: Text(
+                      '${event.eventTypeLabel} · ${formatEventStart(event.start)}',
+                    ),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: () => Navigator.of(context).pop(event),
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class MapStatusMessage extends StatelessWidget {
+  const MapStatusMessage({
+    super.key,
+    required this.message,
+    required this.hasError,
+  });
+
+  final String message;
+  final bool hasError;
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: hasError ? const Color(0xFFFFF1F1) : Colors.white.withAlpha(238),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: hasError ? const Color(0xFFB3261E) : campusInk.withAlpha(24),
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: campusInk.withAlpha(18),
+            blurRadius: 18,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        child: Text(
+          message,
+          style: TextStyle(
+            color: hasError ? const Color(0xFFB3261E) : campusInk,
+            fontSize: 12,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class MissingMapboxTokenView extends StatelessWidget {
+  const MissingMapboxTokenView({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      color: campusBackground,
+      alignment: Alignment.center,
+      padding: const EdgeInsets.all(28),
+      child: Container(
+        constraints: const BoxConstraints(maxWidth: 380),
+        padding: const EdgeInsets.all(22),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: campusInk.withAlpha(24)),
+          boxShadow: [
+            BoxShadow(
+              color: campusInk.withAlpha(18),
+              blurRadius: 24,
+              offset: const Offset(0, 12),
+            ),
+          ],
+        ),
+        child: const Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Mapbox necesita un token',
+              style: TextStyle(
+                color: campusInk,
+                fontSize: 22,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+            SizedBox(height: 12),
+            Text(
+              'Para probar el mapa, ejecuta la app con tu token publico de Mapbox:',
+              style: TextStyle(color: campusInk, fontSize: 14, height: 1.35),
+            ),
+            SizedBox(height: 14),
+            SelectableText(
+              'flutter run --dart-define ACCESS_TOKEN=tu_token',
+              style: TextStyle(color: campusInk, fontWeight: FontWeight.w700),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class MapHeader extends StatelessWidget {
+  const MapHeader({super.key});
+
+  /// Navega a la pantalla de perfil del usuario
+  void _openProfile(BuildContext context) {
+    Navigator.of(
+      context,
+    ).push(MaterialPageRoute(builder: (_) => const ProfileScreen()));
+  }
+
+  void _openLogin(BuildContext context) {
+    Navigator.of(
+      context,
+    ).push(MaterialPageRoute(builder: (_) => const LoginScreen()));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final authState = AuthProvider.of(context).value;
+
+    return Container(
+      height: 58,
+      decoration: BoxDecoration(
+        color: campusSurface.withAlpha(242),
+        borderRadius: BorderRadius.circular(18),
+        boxShadow: [
+          BoxShadow(
+            color: campusInk.withAlpha(18),
+            blurRadius: 20,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          const SizedBox(width: 12),
+          // Avatar del usuario o botón de Iniciar Sesión
+          if (authState.isAuthenticated)
+            InkWell(
+              onTap: () => _openProfile(context),
+              borderRadius: BorderRadius.circular(17),
+              child: CircleAvatar(
+                radius: 17,
+                backgroundColor: campusAccent,
+                backgroundImage: authState.currentUser?.fotoPerfil != null
+                    ? NetworkImage(authState.currentUser!.fotoPerfil!)
+                    : null,
+                child: authState.currentUser?.fotoPerfil == null
+                    ? Icon(Icons.person, color: campusInk, size: 20)
+                    : null,
+              ),
+            )
+          else
+            TextButton(
+              onPressed: () => _openLogin(context),
+              style: TextButton.styleFrom(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 8,
+                ),
+                backgroundColor: campusInk,
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                ),
+              ),
+              child: const Text(
+                'Iniciar sesión',
+                style: TextStyle(fontSize: 12),
+              ),
+            ),
+          const Expanded(
+            child: Center(
+              child: Text(
+                'UNparche',
+                style: TextStyle(
+                  color: campusInk,
+                  fontSize: 24,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ),
+          ),
+          IconButton(
+            onPressed: () {},
+            icon: const Icon(Icons.search),
+            color: campusInk,
+            tooltip: 'Buscar',
+          ),
+          const SizedBox(width: 4),
+        ],
+      ),
+    );
+  }
+}

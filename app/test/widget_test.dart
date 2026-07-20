@@ -2,9 +2,29 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:app/main.dart';
-import 'package:app/event_api_client.dart';
+import 'package:app/services/event_api_client.dart';
 import 'package:app/event_cluster_data.dart';
-import 'package:app/location_picker_state.dart';
+import 'package:app/state/location_picker_state.dart';
+import 'package:app/campus_location_map_facade.dart';
+import 'package:app/models/event_summary.dart';
+import 'package:app/state/auth_state.dart';
+import 'package:app/models/user.dart';
+
+Widget _authenticatedApp() {
+  final notifier = AuthNotifier.withState(
+    AuthState(
+      token: 'test-token',
+      isLoading: false,
+      currentUser: User(
+        id: 1,
+        correoInstitucional: 'test@unal.edu.co',
+        nombre: 'Test',
+        apellido: 'User',
+      ),
+    ),
+  );
+  return AuthProvider(notifier: notifier, child: const UNparcheApp());
+}
 
 void main() {
   test('location picker states preserve valid workflow transitions', () {
@@ -58,7 +78,7 @@ void main() {
   });
 
   testWidgets('shows UNparche on the home screen', (WidgetTester tester) async {
-    await tester.pumpWidget(const UNparcheApp());
+    await tester.pumpWidget(_authenticatedApp());
 
     expect(find.text('UNparche'), findsOneWidget);
     expect(find.text('Categoria'), findsOneWidget);
@@ -68,7 +88,7 @@ void main() {
   });
 
   testWidgets('opens the HU-27 create event form', (WidgetTester tester) async {
-    await tester.pumpWidget(const UNparcheApp());
+    await tester.pumpWidget(_authenticatedApp());
 
     await tester.tap(find.byIcon(Icons.add));
     await tester.pumpAndSettle();
@@ -105,6 +125,7 @@ EventSummary _event({int? id, double? latitude, double? longitude}) {
     organizerCareer: null,
     organizerInfo: null,
     groupId: null,
+    chatEnabled: false,
     groupName: null,
     groupDescription: null,
     groupCategory: null,

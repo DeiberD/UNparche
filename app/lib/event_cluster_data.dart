@@ -1,4 +1,4 @@
-import 'event_api_client.dart';
+import 'models/event_summary.dart';
 
 const eventClusterSourceId = 'event-points';
 const eventClustersLayerId = 'event-clusters';
