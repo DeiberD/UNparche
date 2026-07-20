@@ -137,6 +137,12 @@ class _EventAnnouncementsSectionState extends State<EventAnnouncementsSection> {
 
   @override
   Widget build(BuildContext context) {
+    final canPublishFirstAnnouncement =
+        widget.canPublish &&
+        !_isLoading &&
+        _errorMessage == null &&
+        _announcements.isEmpty;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -154,7 +160,7 @@ class _EventAnnouncementsSectionState extends State<EventAnnouncementsSection> {
                 ),
               ),
             ),
-            if (widget.canPublish)
+            if (canPublishFirstAnnouncement)
               IconButton.filled(
                 tooltip: 'Publicar anuncio',
                 onPressed: _isPublishing ? null : _openPublishDialog,

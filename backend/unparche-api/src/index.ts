@@ -1712,9 +1712,21 @@ export default {
 			}
 
 			const result = await env.unparche_db
-				.prepare("INSERT INTO anuncio (contenido, id_autor, id_evento) VALUES (?, ?, ?)")
-				.bind(contenido, idAutor, idEvento)
+				.prepare(
+					`INSERT INTO anuncio (contenido, id_autor, id_evento)
+					SELECT ?, ?, ?
+					WHERE NOT EXISTS (
+						SELECT 1 FROM anuncio WHERE id_evento = ?
+					)`
+				)
+				.bind(contenido, idAutor, idEvento, idEvento)
 				.run();
+			if (Number(result.meta.changes ?? 0) === 0) {
+				return json(
+					{ ok: false, error: "El evento ya tiene un anuncio publicado." },
+					{ status: 409 }
+				);
+			}
 			const idAnuncio = Number(result.meta.last_row_id);
 			const anuncio = await env.unparche_db
 				.prepare(

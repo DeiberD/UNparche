@@ -79,7 +79,33 @@ void main() {
       findsOneWidget,
     );
     expect(find.text('Anuncio publicado.'), findsOneWidget);
+    expect(find.byTooltip('Publicar anuncio'), findsNothing);
   });
+
+  testWidgets(
+    'organizer cannot publish when the event already has an announcement',
+    (tester) async {
+      await tester.pumpWidget(
+        _testApp(
+          canPublish: true,
+          loader: () async => [
+            const EventAnnouncement(
+              id: 3,
+              content: 'Anuncio existente',
+              publishedAt: null,
+              authorId: 1,
+              authorName: 'Organizador UN',
+              authorNickname: null,
+            ),
+          ],
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Anuncio existente'), findsOneWidget);
+      expect(find.byTooltip('Publicar anuncio'), findsNothing);
+    },
+  );
 }
 
 Widget _testApp({

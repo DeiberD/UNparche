@@ -556,7 +556,7 @@ describe("UNparche API worker", () => {
 						}) }) };
 					}
 					if (prepareCall === 2) {
-						return { bind: () => ({ run: async () => ({ meta: { last_row_id: 4 } }) }) };
+						return { bind: () => ({ run: async () => ({ meta: { changes: 1, last_row_id: 4 } }) }) };
 					}
 					if (prepareCall === 3) {
 						return { bind: () => ({ first: async () => anuncio }) };
@@ -579,6 +579,42 @@ describe("UNparche API worker", () => {
 			anuncio,
 			notificaciones_enviadas: 0,
 		});
+	});
+
+	it("rejects a second announcement for the same event", async () => {
+			let prepareCall = 0;
+			const request = new IncomingRequest("http://example.com/eventos/8/anuncios", {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({ id_autor: 1, contenido: "Otro cambio" }),
+			});
+			const ctx = createExecutionContext();
+			const testEnv = {
+				unparche_db: {
+					prepare: () => {
+						prepareCall += 1;
+						if (prepareCall === 1) {
+							return { bind: () => ({ first: async () => ({
+								id_evento: 8,
+								titulo: "Taller",
+								estado: "PROGRAMADO",
+								fecha_eliminacion: null,
+								id_organizador: 1,
+							}) }) };
+						}
+						return { bind: () => ({ run: async () => ({ meta: { changes: 0 } }) }) };
+					},
+				} as unknown as D1Database,
+			} as Env & { unparche_db: D1Database };
+
+			const response = await worker.fetch(request, testEnv, ctx);
+			await waitOnExecutionContext(ctx);
+
+			expect(response.status).toBe(409);
+			await expect(response.json()).resolves.toEqual({
+				ok: false,
+				error: "El evento ya tiene un anuncio publicado.",
+			});
 	});
 
 	it("updates announcement notifications for a confirmed attendee", async () => {
