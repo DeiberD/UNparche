@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'group_api_client.dart';
+import 'group_members_screen.dart';
 import 'auth_state.dart';
 import 'login_screen.dart';
 
@@ -159,6 +160,7 @@ class _GroupsScreenState extends State<GroupsScreen> {
       await _groupApiClient.respondInvitation(
         invitationId: invitationId,
         status: status,
+        userId: AuthProvider.of(context).value.currentUser!.id,
       );
       if (!mounted) {
         return;
@@ -187,6 +189,104 @@ class _GroupsScreenState extends State<GroupsScreen> {
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text(error.message)));
+    }
+  }
+
+  Future<void> _inviteToGroup(GroupSummary group) async {
+    final groupId = group.id;
+    final userId = AuthProvider.of(context).value.currentUser?.id;
+    if (groupId == null || userId == null) return;
+    var emailDraft = '';
+    final email = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text('Invitar a ${group.name}'),
+        content: TextField(
+          autofocus: true,
+          keyboardType: TextInputType.emailAddress,
+          onChanged: (value) => emailDraft = value,
+          decoration: const InputDecoration(
+            labelText: 'Correo institucional',
+            hintText: 'usuario@unal.edu.co',
+            border: OutlineInputBorder(),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton(
+            onPressed: () {
+              final value = emailDraft.trim();
+              if (value.isNotEmpty) Navigator.of(dialogContext).pop(value);
+            },
+            child: const Text('Invitar'),
+          ),
+        ],
+      ),
+    );
+    if (email == null || !mounted) return;
+    try {
+      await _groupApiClient.inviteToGroup(
+        groupId: groupId,
+        inviterId: userId,
+        institutionalEmail: email,
+      );
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Invitacion enviada.')));
+      }
+    } on GroupApiException catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(error.message)));
+      }
+    }
+  }
+
+  Future<void> _deleteGroup(GroupSummary group) async {
+    final groupId = group.id;
+    final userId = AuthProvider.of(context).value.currentUser?.id;
+    if (groupId == null || userId == null) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Eliminar grupo'),
+        content: Text(
+          '¿Seguro que deseas eliminar “${group.name}”? Las membresias e invitaciones del grupo tambien se eliminaran.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: Colors.red.shade700),
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('Eliminar'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    try {
+      await _groupApiClient.deleteGroup(groupId: groupId, userId: userId);
+      if (!mounted) return;
+      setState(() {
+        _groups = _groups.where((item) => item.id != groupId).toList();
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Grupo "${group.name}" eliminado.')),
+      );
+    } on GroupApiException catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(error.message)));
+      }
     }
   }
 
@@ -312,6 +412,22 @@ class _GroupsScreenState extends State<GroupsScreen> {
                   padding: const EdgeInsets.only(bottom: 12),
                   child: GroupListTile(
                     group: group,
+                    onTap: group.isMember || group.isCreator
+                        ? () => Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (_) => GroupMembersScreen(
+                                group: group,
+                                groupApiClient: _groupApiClient,
+                              ),
+                            ),
+                          )
+                        : null,
+                    onInvitePressed: group.isCreator
+                        ? () => _inviteToGroup(group)
+                        : null,
+                    onDeletePressed: group.isCreator
+                        ? () => _deleteGroup(group)
+                        : null,
                     onJoinPressed: () {
                       ScaffoldMessenger.of(context).showSnackBar(
                         const SnackBar(
@@ -522,140 +638,165 @@ class GroupListTile extends StatelessWidget {
     super.key,
     required this.group,
     required this.onJoinPressed,
+    this.onTap,
+    this.onInvitePressed,
+    this.onDeletePressed,
   });
 
   final GroupSummary group;
   final VoidCallback onJoinPressed;
+  final VoidCallback? onTap;
+  final VoidCallback? onInvitePressed;
+  final VoidCallback? onDeletePressed;
 
   @override
   Widget build(BuildContext context) {
     return Material(
       color: Colors.white.withAlpha(242),
       borderRadius: BorderRadius.circular(18),
-      child: Container(
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: GroupsScreen.ink.withAlpha(20)),
-          boxShadow: [
-            BoxShadow(
-              color: GroupsScreen.ink.withAlpha(12),
-              blurRadius: 14,
-              offset: const Offset(0, 6),
-            ),
-          ],
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                CircleAvatar(
-                  radius: 24,
-                  backgroundColor: _categoryColor(group.category).withAlpha(38),
-                  child: Icon(
-                    _categoryIcon(group.category),
-                    color: _categoryColor(group.category),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Flexible(
-                            child: Text(
-                              group.name,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                color: GroupsScreen.ink,
-                                fontSize: 16,
-                                fontWeight: FontWeight.w800,
-                              ),
-                            ),
-                          ),
-                          if (group.isOfficial) ...[
-                            const SizedBox(width: 6),
-                            const Icon(
-                              Icons.verified,
-                              color: Color(0xFF4267B2),
-                              size: 18,
-                            ),
-                          ],
-                        ],
-                      ),
-                      const SizedBox(height: 5),
-                      Text(
-                        '${group.categoryLabel} · ${group.isOfficial ? 'Oficial' : 'No oficial'}',
-                        style: TextStyle(
-                          color: GroupsScreen.ink.withAlpha(180),
-                          fontSize: 12,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 10),
-            Text(
-              group.description.isEmpty
-                  ? 'Este grupo aun no tiene descripcion.'
-                  : group.description,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                color: GroupsScreen.ink.withAlpha(165),
-                fontSize: 12,
-                height: 1.25,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(18),
+        child: Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: GroupsScreen.ink.withAlpha(20)),
+            boxShadow: [
+              BoxShadow(
+                color: GroupsScreen.ink.withAlpha(12),
+                blurRadius: 14,
+                offset: const Offset(0, 6),
               ),
-            ),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                Icon(
-                  Icons.people_alt_outlined,
-                  size: 16,
-                  color: GroupsScreen.ink.withAlpha(170),
-                ),
-                const SizedBox(width: 5),
-                Text(
-                  '${group.memberCount} integrantes',
-                  style: TextStyle(
-                    color: GroupsScreen.ink.withAlpha(170),
-                    fontSize: 12,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-                const Spacer(),
-                if (group.isCreator)
-                  const Chip(
-                    avatar: Icon(Icons.admin_panel_settings_outlined, size: 16),
-                    label: Text('Creado por ti'),
-                  )
-                else if (group.isMember)
-                  const Chip(
-                    avatar: Icon(Icons.check_circle_outline, size: 16),
-                    label: Text('Eres miembro'),
-                  )
-                else
-                  TextButton.icon(
-                    onPressed: onJoinPressed,
-                    icon: const Icon(Icons.lock_outline, size: 16),
-                    label: const Text('Por invitacion'),
-                    style: TextButton.styleFrom(
-                      foregroundColor: GroupsScreen.ink,
-                      textStyle: const TextStyle(fontWeight: FontWeight.w800),
+            ],
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  CircleAvatar(
+                    radius: 24,
+                    backgroundColor: _categoryColor(
+                      group.category,
+                    ).withAlpha(38),
+                    child: Icon(
+                      _categoryIcon(group.category),
+                      color: _categoryColor(group.category),
                     ),
                   ),
-              ],
-            ),
-          ],
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Flexible(
+                              child: Text(
+                                group.name,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  color: GroupsScreen.ink,
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                            ),
+                            if (group.isOfficial) ...[
+                              const SizedBox(width: 6),
+                              const Icon(
+                                Icons.verified,
+                                color: Color(0xFF4267B2),
+                                size: 18,
+                              ),
+                            ],
+                          ],
+                        ),
+                        const SizedBox(height: 5),
+                        Text(
+                          '${group.categoryLabel} · ${group.isOfficial ? 'Oficial' : 'No oficial'}',
+                          style: TextStyle(
+                            color: GroupsScreen.ink.withAlpha(180),
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              Text(
+                group.description.isEmpty
+                    ? 'Este grupo aun no tiene descripcion.'
+                    : group.description,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: GroupsScreen.ink.withAlpha(165),
+                  fontSize: 12,
+                  height: 1.25,
+                ),
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Icon(
+                    Icons.people_alt_outlined,
+                    size: 16,
+                    color: GroupsScreen.ink.withAlpha(170),
+                  ),
+                  const SizedBox(width: 5),
+                  Text(
+                    '${group.memberCount} integrantes',
+                    style: TextStyle(
+                      color: GroupsScreen.ink.withAlpha(170),
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const Spacer(),
+                  if (group.isCreator)
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        IconButton(
+                          tooltip: 'Invitar persona',
+                          onPressed: onInvitePressed,
+                          icon: const Icon(Icons.person_add_alt_1, size: 20),
+                          color: GroupsScreen.ink,
+                        ),
+                        IconButton(
+                          tooltip: 'Eliminar grupo',
+                          onPressed: onDeletePressed,
+                          icon: const Icon(Icons.delete_outline, size: 20),
+                          color: Colors.red,
+                        ),
+                      ],
+                    )
+                  else if (group.isMember)
+                    const Chip(
+                      avatar: Icon(Icons.check_circle_outline, size: 16),
+                      label: Text('Eres miembro'),
+                    )
+                  else
+                    TextButton.icon(
+                      onPressed: onJoinPressed,
+                      icon: const Icon(Icons.lock_outline, size: 16),
+                      label: const Text('Por invitacion'),
+                      style: TextButton.styleFrom(
+                        foregroundColor: GroupsScreen.ink,
+                        textStyle: const TextStyle(fontWeight: FontWeight.w800),
+                      ),
+                    ),
+                ],
+              ),
+            ],
+          ),
         ),
       ),
     );

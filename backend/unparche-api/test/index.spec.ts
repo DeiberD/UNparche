@@ -156,6 +156,10 @@ describe("UNparche API worker", () => {
 		expect(boundUserId).toBe(2);
 		expect(sql).toContain("a.estado AS estado_asistencia");
 		expect(sql).toContain("LEFT JOIN asistencia a");
+		expect(sql).toContain("e.visibilidad = 'PUBLICA'");
+		expect(sql).toContain("e.visibilidad = 'SOLO_GRUPO'");
+		expect(sql).toContain("FROM membresia_grupo vm");
+		expect(sql).toContain("vm.estado = 'ACTIVA'");
 		await expect(response.json()).resolves.toEqual({ ok: true, eventos });
 	});
 
@@ -189,6 +193,44 @@ describe("UNparche API worker", () => {
 
 		expect(response.status).toBe(200);
 		await expect(response.json()).resolves.toEqual({ ok: true, grupo });
+	});
+
+	it("allows only the creator to delete a group", async () => {
+		const group = { id_grupo: 1, nombre: "Ajedrez UN", id_administrador: 1 };
+		const request = new IncomingRequest("http://example.com/grupos/1?id_usuario=2", { method: "DELETE" });
+		const ctx = createExecutionContext();
+		const testEnv = {
+			unparche_db: {
+				prepare: () => ({ bind: () => ({ first: async () => group }) }),
+			} as unknown as D1Database,
+		} as Env & { unparche_db: D1Database };
+		const response = await worker.fetch(request, testEnv, ctx);
+		await waitOnExecutionContext(ctx);
+		expect(response.status).toBe(403);
+		await expect(response.json()).resolves.toEqual({ ok: false, error: "Solo el creador puede eliminar este grupo." });
+	});
+
+	it("deletes a group when requested by its creator", async () => {
+		const group = { id_grupo: 1, nombre: "Ajedrez UN", id_administrador: 1 };
+		let prepareCall = 0;
+		let deleteSql = "";
+		const request = new IncomingRequest("http://example.com/grupos/1?id_usuario=1", { method: "DELETE" });
+		const ctx = createExecutionContext();
+		const testEnv = {
+			unparche_db: {
+				prepare: (query: string) => {
+					prepareCall += 1;
+					if (prepareCall === 1) return { bind: () => ({ first: async () => group }) };
+					deleteSql = query;
+					return { bind: () => ({ run: async () => ({ success: true }) }) };
+				},
+			} as unknown as D1Database,
+		} as Env & { unparche_db: D1Database };
+		const response = await worker.fetch(request, testEnv, ctx);
+		await waitOnExecutionContext(ctx);
+		expect(response.status).toBe(200);
+		expect(deleteSql).toContain("DELETE FROM grupo");
+		await expect(response.json()).resolves.toEqual({ ok: true, message: "Grupo eliminado correctamente.", grupo: group });
 	});
 
 	it("creates a group and administrator membership", async () => {
@@ -255,6 +297,126 @@ describe("UNparche API worker", () => {
 			message: "Grupo creado correctamente.",
 			grupo,
 		});
+	});
+
+	it("blocks joining a group without an invitation", async () => {
+		const request = new IncomingRequest("http://example.com/grupos/1/miembros", {
+			method: "POST",
+			body: JSON.stringify({ id_usuario: 2 }),
+			headers: { "Content-Type": "application/json" },
+		});
+		const ctx = createExecutionContext();
+		const response = await worker.fetch(request, { unparche_db: {} as D1Database } as Env, ctx);
+		await waitOnExecutionContext(ctx);
+
+		expect(response.status).toBe(403);
+		await expect(response.json()).resolves.toEqual({
+			ok: false,
+			error: "Solo puedes unirte a un grupo mediante una invitacion aceptada.",
+		});
+	});
+
+	it("allows only the group creator to invite a user", async () => {
+		const request = new IncomingRequest("http://example.com/grupos/1/invitaciones", {
+			method: "POST",
+			body: JSON.stringify({ id_invitador: 2, correo_institucional: "user@unal.edu.co" }),
+			headers: { "Content-Type": "application/json" },
+		});
+		const ctx = createExecutionContext();
+		const testEnv = {
+			unparche_db: {
+				prepare: () => ({ bind: () => ({ first: async () => ({ id_grupo: 1, id_administrador: 1 }) }) }),
+			} as unknown as D1Database,
+		} as Env & { unparche_db: D1Database };
+		const response = await worker.fetch(request, testEnv, ctx);
+		await waitOnExecutionContext(ctx);
+
+		expect(response.status).toBe(403);
+		await expect(response.json()).resolves.toEqual({
+			ok: false,
+			error: "Solo el creador del grupo puede enviar invitaciones.",
+		});
+	});
+
+	it("creates a pending invitation when the creator invites a registered user", async () => {
+		const invitation = {
+			id_invitacion_grupo: 8,
+			estado: "PENDIENTE",
+			id_grupo: 1,
+			id_invitado: 2,
+			id_invitador: 1,
+			nombre: "Ajedrez UN",
+			nombre_invitador: "Admin UN",
+		};
+		let prepareCall = 0;
+		const request = new IncomingRequest("http://example.com/grupos/1/invitaciones", {
+			method: "POST",
+			body: JSON.stringify({ id_invitador: 1, correo_institucional: "user@unal.edu.co" }),
+			headers: { "Content-Type": "application/json" },
+		});
+		const ctx = createExecutionContext();
+		const testEnv = {
+			unparche_db: {
+				prepare: () => {
+					prepareCall += 1;
+					if (prepareCall === 1) return { bind: () => ({ first: async () => ({ id_grupo: 1, id_administrador: 1 }) }) };
+					if (prepareCall === 2) return { bind: () => ({ first: async () => ({ id_usuario: 2 }) }) };
+					if (prepareCall === 3 || prepareCall === 4) return { bind: () => ({ first: async () => null }) };
+					if (prepareCall === 5) return { bind: () => ({ run: async () => ({ meta: { last_row_id: 8 } }) }) };
+					return { bind: () => ({ first: async () => invitation }) };
+				},
+			} as unknown as D1Database,
+		} as Env & { unparche_db: D1Database };
+
+		const response = await worker.fetch(request, testEnv, ctx);
+		await waitOnExecutionContext(ctx);
+		expect(response.status).toBe(201);
+		await expect(response.json()).resolves.toEqual({
+			ok: true,
+			message: "Invitacion enviada correctamente.",
+			invitacion: invitation,
+		});
+	});
+
+	it("accepts an invitation and creates the active membership", async () => {
+		const invitation = {
+			id_invitacion_grupo: 8,
+			estado: "ACEPTADA",
+			id_grupo: 1,
+			id_invitado: 2,
+			id_invitador: 1,
+		};
+		let prepareCall = 0;
+		let membershipSql = "";
+		const request = new IncomingRequest("http://example.com/invitaciones-grupo/8", {
+			method: "PATCH",
+			body: JSON.stringify({ estado: "ACEPTADA", id_usuario: 2 }),
+			headers: { "Content-Type": "application/json" },
+		});
+		const ctx = createExecutionContext();
+		const testEnv = {
+			unparche_db: {
+				prepare: (query: string) => {
+					prepareCall += 1;
+					if (prepareCall === 1) {
+						return { bind: () => ({ first: async () => ({ ...invitation, estado: "PENDIENTE" }) }) };
+					}
+					if (prepareCall === 2) return { bind: () => ({ run: async () => ({ success: true }) }) };
+					if (prepareCall === 3) {
+						membershipSql = query;
+						return { bind: () => ({ run: async () => ({ success: true }) }) };
+					}
+					return { bind: () => ({ first: async () => invitation }) };
+				},
+			} as unknown as D1Database,
+		} as Env & { unparche_db: D1Database };
+
+		const response = await worker.fetch(request, testEnv, ctx);
+		await waitOnExecutionContext(ctx);
+		expect(response.status).toBe(200);
+		expect(membershipSql).toContain("INSERT OR IGNORE INTO membresia_grupo");
+		expect(membershipSql).toContain("'MIEMBRO', 'ACTIVA'");
+		await expect(response.json()).resolves.toEqual({ ok: true, invitacion: invitation });
 	});
 
 	it("gets an event by id", async () => {

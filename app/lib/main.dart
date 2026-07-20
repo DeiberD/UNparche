@@ -244,8 +244,8 @@ class _CampusMapScreenState extends State<CampusMapScreen> {
       organizerEmail: null,
       organizerCareer: null,
       organizerInfo: null,
-      groupId: null,
-      groupName: null,
+      groupId: event.groupId,
+      groupName: event.groupName,
       groupDescription: null,
       groupCategory: null,
       groupIsOfficial: null,
@@ -321,7 +321,7 @@ class _CampusMapScreenState extends State<CampusMapScreen> {
   bool _matchesTimeScope(EventSummary event, DateTime now) {
     final eventStart = event.start;
     final eventEnd = event.end;
-    if (!event.isPublic || eventStart == null || eventEnd == null) {
+    if (eventStart == null || eventEnd == null) {
       return false;
     }
 

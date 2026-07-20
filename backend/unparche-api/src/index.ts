@@ -34,14 +34,14 @@ type CrearGrupoBody = {
 	id_administrador?: number;
 };
 
-type AgregarMiembroGrupoBody = {
-	id_usuario?: number;
-	rol_grupo?: "ADMINISTRADOR" | "MIEMBRO";
-	estado?: "ACTIVA" | "INACTIVA";
-};
-
 type ActualizarInvitacionGrupoBody = {
 	estado?: "ACEPTADA" | "RECHAZADA";
+	id_usuario?: number;
+};
+
+type CrearInvitacionGrupoBody = {
+	id_invitador?: number;
+	correo_institucional?: string;
 };
 
 type ActualizarEventoBody = {
@@ -691,6 +691,25 @@ export default {
 			return json({ ok: true, grupo });
 		}
 
+		if (request.method === "DELETE" && grupoMatch) {
+			const idGrupo = Number(grupoMatch[1]);
+			const idUsuario = Number(url.searchParams.get("id_usuario"));
+			if (!Number.isInteger(idUsuario)) {
+				return json({ ok: false, error: "id_usuario debe ser entero." }, { status: 400 });
+			}
+			const grupo = await env.unparche_db.prepare(
+				`SELECT id_grupo, nombre, id_administrador FROM grupo WHERE id_grupo = ?`
+			).bind(idGrupo).first<{ id_grupo: number; nombre: string; id_administrador: number }>();
+			if (!grupo) return json({ ok: false, error: "Grupo no encontrado." }, { status: 404 });
+			if (grupo.id_administrador !== idUsuario) {
+				return json({ ok: false, error: "Solo el creador puede eliminar este grupo." }, { status: 403 });
+			}
+			await env.unparche_db.prepare(
+				`DELETE FROM grupo WHERE id_grupo = ? AND id_administrador = ?`
+			).bind(idGrupo, idUsuario).run();
+			return json({ ok: true, message: "Grupo eliminado correctamente.", grupo });
+		}
+
 		// GET eventos asociados a un grupo (/grupos/:id/eventos)
 		const eventosGrupoMatch = url.pathname.match(/^\/grupos\/(\d+)\/eventos$/);
 
@@ -800,13 +819,13 @@ export default {
 						m.id_usuario,
 						u.nombre || ' ' || u.apellido AS usuario_nombre,
 						u.correo_institucional,
-						u.carrera,
 						m.rol_grupo,
 						m.estado,
 						m.fecha_union
 					FROM membresia_grupo m
 					JOIN usuario u ON u.id_usuario = m.id_usuario
 					WHERE m.id_grupo = ?
+					AND m.estado = 'ACTIVA'
 					ORDER BY m.fecha_union DESC`
 				)
 				.bind(idGrupo)
@@ -821,115 +840,58 @@ export default {
 
 		// POST agregar usuario a un grupo (/grupos/:id/miembros)
 		if (request.method === "POST" && miembrosGrupoMatch) {
-			const idGrupo = Number(miembrosGrupoMatch[1]);
+			return json(
+				{ ok: false, error: "Solo puedes unirte a un grupo mediante una invitacion aceptada." },
+				{ status: 403 }
+			);
+		}
 
-			let body: AgregarMiembroGrupoBody;
-
-			try {
-				body = await request.json();
-			} catch {
+		const invitacionesGrupoMatch = url.pathname.match(/^\/grupos\/(\d+)\/invitaciones$/);
+		if (request.method === "POST" && invitacionesGrupoMatch) {
+			const idGrupo = Number(invitacionesGrupoMatch[1]);
+			let body: CrearInvitacionGrupoBody;
+			try { body = await request.json(); } catch {
 				return json({ ok: false, error: "El body debe ser JSON valido." }, { status: 400 });
 			}
-
-			const idUsuario = toInteger(body.id_usuario);
-			const rolGrupo = body.rol_grupo ?? "MIEMBRO";
-			const estado = body.estado ?? "ACTIVA";
-
-			if (idUsuario === null) {
-				return json(
-					{ ok: false, error: "id_usuario es obligatorio y debe ser entero." },
-					{ status: 400 }
-				);
+			const idInvitador = toInteger(body.id_invitador);
+			const correo = typeof body.correo_institucional === "string"
+				? body.correo_institucional.trim().toLowerCase()
+				: "";
+			if (idInvitador === null || !correo) {
+				return json({ ok: false, error: "id_invitador y correo_institucional son obligatorios." }, { status: 400 });
 			}
 
-			if (!["ADMINISTRADOR", "MIEMBRO"].includes(rolGrupo)) {
-				return json(
-					{ ok: false, error: "rol_grupo debe ser ADMINISTRADOR o MIEMBRO." },
-					{ status: 400 }
-				);
+			const grupo = await env.unparche_db.prepare(
+				`SELECT id_grupo, id_administrador FROM grupo WHERE id_grupo = ?`
+			).bind(idGrupo).first<{ id_grupo: number; id_administrador: number }>();
+			if (!grupo) return json({ ok: false, error: "Grupo no encontrado." }, { status: 404 });
+			if (grupo.id_administrador !== idInvitador) {
+				return json({ ok: false, error: "Solo el creador del grupo puede enviar invitaciones." }, { status: 403 });
 			}
 
-			if (!["ACTIVA", "INACTIVA"].includes(estado)) {
-				return json(
-					{ ok: false, error: "estado debe ser ACTIVA o INACTIVA." },
-					{ status: 400 }
-				);
+			const invitado = await env.unparche_db.prepare(
+				`SELECT id_usuario FROM usuario WHERE lower(correo_institucional) = ?`
+			).bind(correo).first<{ id_usuario: number }>();
+			if (!invitado) return json({ ok: false, error: "No existe un usuario con ese correo institucional." }, { status: 404 });
+			if (invitado.id_usuario === idInvitador) {
+				return json({ ok: false, error: "El creador ya pertenece al grupo." }, { status: 409 });
 			}
 
-			try {
-				await env.unparche_db
-					.prepare(
-						`INSERT INTO membresia_grupo (
-							id_usuario,
-							id_grupo,
-							rol_grupo,
-							estado
-						) VALUES (?, ?, ?, ?)
-						ON CONFLICT(id_usuario, id_grupo)
-						DO UPDATE SET
-							rol_grupo = excluded.rol_grupo,
-							estado = excluded.estado`
-					)
-					.bind(idUsuario, idGrupo, rolGrupo, estado)
-					.run();
+			const membresia = await env.unparche_db.prepare(
+				`SELECT id_membresia FROM membresia_grupo WHERE id_grupo = ? AND id_usuario = ? AND estado = 'ACTIVA'`
+			).bind(idGrupo, invitado.id_usuario).first();
+			if (membresia) return json({ ok: false, error: "El usuario ya pertenece al grupo." }, { status: 409 });
 
-				const miembro = await env.unparche_db
-					.prepare(
-						`SELECT
-							m.id_membresia,
-							m.id_grupo,
-							g.nombre AS grupo_nombre,
-							m.id_usuario,
-							u.nombre || ' ' || u.apellido AS usuario_nombre,
-							u.correo_institucional,
-							u.carrera,
-							m.rol_grupo,
-							m.estado,
-							m.fecha_union
-						FROM membresia_grupo m
-						JOIN grupo g ON g.id_grupo = m.id_grupo
-						JOIN usuario u ON u.id_usuario = m.id_usuario
-						WHERE m.id_usuario = ?
-						AND m.id_grupo = ?`
-					)
-					.bind(idUsuario, idGrupo)
-					.first();
+			const pendiente = await env.unparche_db.prepare(
+				`SELECT id_invitacion_grupo FROM invitacion_grupo WHERE id_grupo = ? AND id_invitado = ? AND estado = 'PENDIENTE'`
+			).bind(idGrupo, invitado.id_usuario).first();
+			if (pendiente) return json({ ok: false, error: "El usuario ya tiene una invitacion pendiente." }, { status: 409 });
 
-				return json(
-					{
-						ok: true,
-						message: "Miembro agregado correctamente.",
-						miembro,
-					},
-					{ status: 201 }
-				);
-			} catch (error) {
-				const message = error instanceof Error ? error.message : String(error);
-				const lowerMessage = message.toLowerCase();
-
-				if (lowerMessage.includes("foreign key constraint failed")) {
-					return json(
-						{ ok: false, error: "El usuario o el grupo no existe." },
-						{ status: 400 }
-					);
-				}
-
-				if (
-					lowerMessage.includes("check constraint failed") ||
-					lowerMessage.includes("not null constraint failed") ||
-					lowerMessage.includes("unique constraint failed")
-				) {
-					return json(
-						{ ok: false, error: "Los datos enviados no cumplen las restricciones de la base de datos." },
-						{ status: 400 }
-					);
-				}
-
-				return json(
-					{ ok: false, error: "No se pudo agregar el miembro al grupo." },
-					{ status: 500 }
-				);
-			}
+			const result = await env.unparche_db.prepare(
+				`INSERT INTO invitacion_grupo (id_grupo, id_invitado, id_invitador) VALUES (?, ?, ?)`
+			).bind(idGrupo, invitado.id_usuario, idInvitador).run();
+			const invitacion = await selectInvitacionGrupoById(env.unparche_db, Number(result.meta.last_row_id));
+			return json({ ok: true, message: "Invitacion enviada correctamente.", invitacion }, { status: 201 });
 		}
 
 		const invitacionesUsuarioMatch = url.pathname.match(/^\/usuarios\/(\d+)\/invitaciones-grupo$/);
@@ -995,8 +957,12 @@ export default {
 			}
 
 			const estado = body.estado;
+			const idUsuario = toInteger(body.id_usuario);
 			if (!estado || !["ACEPTADA", "RECHAZADA"].includes(estado)) {
 				return json({ ok: false, error: "estado debe ser ACEPTADA o RECHAZADA." }, { status: 400 });
+			}
+			if (idUsuario === null) {
+				return json({ ok: false, error: "id_usuario es obligatorio." }, { status: 400 });
 			}
 
 			const invitacionActual = await env.unparche_db
@@ -1014,6 +980,9 @@ export default {
 
 			if (invitacionActual.estado !== "PENDIENTE") {
 				return json({ ok: false, error: "La invitacion ya fue respondida." }, { status: 409 });
+			}
+			if (invitacionActual.id_invitado !== idUsuario) {
+				return json({ ok: false, error: "Solo el usuario invitado puede responder." }, { status: 403 });
 			}
 
 			await env.unparche_db
@@ -1816,6 +1785,16 @@ export default {
 				: `LEFT JOIN asistencia a
 					ON a.id_evento = e.id_evento
 					AND a.id_usuario = ?`;
+			const visibilidadCondition = idUsuario === null
+				? `e.visibilidad = 'PUBLICA'`
+				: `(e.visibilidad = 'PUBLICA'
+					OR e.id_organizador = ?
+					OR (e.visibilidad = 'SOLO_GRUPO' AND EXISTS (
+						SELECT 1 FROM membresia_grupo vm
+						WHERE vm.id_grupo = e.id_grupo
+						AND vm.id_usuario = ?
+						AND vm.estado = 'ACTIVA'
+					)))`;
 			const eventosQuery = `SELECT
 				e.id_evento,
 				e.titulo,
@@ -1850,11 +1829,12 @@ export default {
 			LEFT JOIN grupo g ON g.id_grupo = e.id_grupo
 			${asistenciaJoin}
 			WHERE ${visibleEventHistoryConditionForAlias("e")}
+			AND ${visibilidadCondition}
 			ORDER BY e.fecha_inicio DESC`;
 			const eventosStatement = env.unparche_db.prepare(eventosQuery);
 			const eventos = idUsuario === null
 				? await eventosStatement.all()
-				: await eventosStatement.bind(idUsuario).all();
+				: await eventosStatement.bind(idUsuario, idUsuario, idUsuario).all();
 
 			return json({ ok: true, eventos: eventos.results });
 		}
@@ -1911,6 +1891,20 @@ export default {
 
 			if (!visibilidad || !["PUBLICA", "SOLO_GRUPO", "SOLO_AMIGOS"].includes(visibilidad)) {
 				return json({ ok: false, error: "visibilidad debe ser PUBLICA, SOLO_GRUPO o SOLO_AMIGOS." }, { status: 400 });
+			}
+
+			if (visibilidad === "SOLO_GRUPO" && idGrupo === null) {
+				return json({ ok: false, error: "Debes seleccionar un grupo para esta visibilidad." }, { status: 400 });
+			}
+
+			if (idGrupo !== null) {
+				const membresia = await env.unparche_db.prepare(
+					`SELECT id_membresia FROM membresia_grupo
+					 WHERE id_grupo = ? AND id_usuario = ? AND estado = 'ACTIVA'`
+				).bind(idGrupo, idOrganizador).first();
+				if (!membresia) {
+					return json({ ok: false, error: "Solo puedes asociar eventos a grupos a los que perteneces." }, { status: 403 });
+				}
 			}
 
 			if (latitud < -90 || latitud > 90) {

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'event_api_client.dart';
+import 'group_api_client.dart';
 import 'flutter_chat/chat_socket_client.dart';
 import 'location_picker_screen.dart';
 
@@ -66,6 +67,35 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
   LocationSelection? _selectedLocation;
   bool _chatEnabled = true;
   bool _isPublishing = false;
+  bool _isLoadingGroups = false;
+  List<GroupSummary> _userGroups = const [];
+  GroupSummary? _selectedGroup;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadUserGroups();
+  }
+
+  Future<void> _loadUserGroups() async {
+    setState(() => _isLoadingGroups = true);
+    try {
+      final groups = await GroupApiClient().fetchGroups(
+        userId: widget.organizerId,
+      );
+      if (!mounted) return;
+      setState(() {
+        _userGroups = groups
+            .where((group) => group.id != null)
+            .where((group) => group.isMember || group.isCreator)
+            .toList();
+      });
+    } catch (_) {
+      if (mounted) setState(() => _userGroups = const []);
+    } finally {
+      if (mounted) setState(() => _isLoadingGroups = false);
+    }
+  }
 
   @override
   void dispose() {
@@ -194,6 +224,11 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
     final eventTypeId = _eventTypeIds[_selectedType]!;
     final visibility = _visibilityApiValues[_selectedVisibility]!;
 
+    if (visibility == 'SOLO_GRUPO' && _selectedGroup == null) {
+      _showMessage('Selecciona el grupo que podra ver el evento.');
+      return;
+    }
+
     setState(() => _isPublishing = true);
 
     try {
@@ -213,6 +248,9 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
                 ..visibleAs(visibility)
                 ..organizedBy(widget.organizerId)
                 ..typedAs(eventTypeId)
+                ..forGroup(
+                  visibility == 'SOLO_GRUPO' ? _selectedGroup?.id : null,
+                )
                 ..withChatEnabled(_chatEnabled))
               .build();
       final response = await apiClient.createEvent(request);
@@ -256,6 +294,8 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
           eventTypeId: eventTypeId,
           type: _selectedType,
           visibility: _selectedVisibility,
+          groupId: visibility == 'SOLO_GRUPO' ? _selectedGroup?.id : null,
+          groupName: visibility == 'SOLO_GRUPO' ? _selectedGroup?.name : null,
           chatEnabled: _chatEnabled,
         ),
       );
@@ -437,7 +477,10 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
                       fontWeight: FontWeight.w700,
                     ),
                     onSelected: (_) {
-                      setState(() => _selectedVisibility = visibility);
+                      setState(() {
+                        _selectedVisibility = visibility;
+                        if (visibility != 'Solo grupo') _selectedGroup = null;
+                      });
                     },
                   );
                 }).toList(),
@@ -447,6 +490,36 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
                 _visibilityDescription(_selectedVisibility),
                 style: TextStyle(color: _ink.withAlpha(180)),
               ),
+              if (_selectedVisibility == 'Solo grupo') ...[
+                const SizedBox(height: 12),
+                if (_isLoadingGroups)
+                  const LinearProgressIndicator()
+                else if (_userGroups.isEmpty)
+                  const Text(
+                    'No perteneces a ningun grupo disponible.',
+                    style: TextStyle(color: Colors.red),
+                  )
+                else
+                  DropdownButtonFormField<GroupSummary>(
+                    initialValue: _selectedGroup,
+                    decoration: const InputDecoration(
+                      labelText: 'Grupo que podra ver el evento',
+                      prefixIcon: Icon(Icons.groups_outlined),
+                      border: OutlineInputBorder(),
+                    ),
+                    items: _userGroups
+                        .map(
+                          (group) => DropdownMenuItem(
+                            value: group,
+                            child: Text(group.name),
+                          ),
+                        )
+                        .toList(),
+                    onChanged: (group) {
+                      setState(() => _selectedGroup = group);
+                    },
+                  ),
+              ],
               const SizedBox(height: 8),
               SwitchListTile(
                 value: _chatEnabled,
@@ -515,6 +588,8 @@ class CreatedEventDraft {
     required this.eventTypeId,
     required this.type,
     required this.visibility,
+    required this.groupId,
+    required this.groupName,
     required this.chatEnabled,
   });
 
@@ -531,6 +606,8 @@ class CreatedEventDraft {
   final int eventTypeId;
   final String type;
   final String visibility;
+  final int? groupId;
+  final String? groupName;
   final bool chatEnabled;
 
   String get apiVisibility {

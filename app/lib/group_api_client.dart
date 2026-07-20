@@ -44,6 +44,33 @@ class GroupApiClient {
         .toList();
   }
 
+  Future<List<GroupMember>> fetchGroupMembers({required int groupId}) async {
+    final request = await _httpClient.getUrl(
+      _baseUri.resolve('/grupos/$groupId/miembros'),
+    );
+    final response = await request.close();
+    final responseBody = await response.transform(utf8.decoder).join();
+    final decoded = responseBody.isEmpty ? null : jsonDecode(responseBody);
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      final message = decoded is Map<String, dynamic>
+          ? decoded['error']?.toString()
+          : null;
+      throw GroupApiException(
+        message ?? 'No se pudieron cargar los integrantes.',
+        statusCode: response.statusCode,
+      );
+    }
+    if (decoded is! Map<String, dynamic> || decoded['miembros'] is! List) {
+      throw const GroupApiException(
+        'La API devolvio una respuesta inesperada.',
+      );
+    }
+    return (decoded['miembros'] as List)
+        .whereType<Map<String, dynamic>>()
+        .map(GroupMember.fromJson)
+        .toList();
+  }
+
   Future<GroupSummary> createGroup(CreateGroupRequest group) async {
     final request = await _httpClient.postUrl(_baseUri.resolve('/grupos'));
     request.headers.contentType = ContentType.json;
@@ -77,6 +104,25 @@ class GroupApiClient {
     return GroupSummary.fromJson(
       decoded['grupo'] as Map<String, dynamic>,
     ).copyWith(isMember: true, isCreator: true);
+  }
+
+  Future<void> deleteGroup({required int groupId, required int userId}) async {
+    final uri = _baseUri
+        .resolve('/grupos/$groupId')
+        .replace(queryParameters: {'id_usuario': '$userId'});
+    final request = await _httpClient.deleteUrl(uri);
+    final response = await request.close();
+    final responseBody = await response.transform(utf8.decoder).join();
+    final decoded = responseBody.isEmpty ? null : jsonDecode(responseBody);
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      final message = decoded is Map<String, dynamic>
+          ? decoded['error']?.toString()
+          : null;
+      throw GroupApiException(
+        message ?? 'No se pudo eliminar el grupo.',
+        statusCode: response.statusCode,
+      );
+    }
   }
 
   Future<List<GroupInvitation>> fetchInvitations({required int userId}) async {
@@ -116,12 +162,13 @@ class GroupApiClient {
   Future<GroupInvitation> respondInvitation({
     required int invitationId,
     required String status,
+    required int userId,
   }) async {
     final request = await _httpClient.patchUrl(
       _baseUri.resolve('/invitaciones-grupo/$invitationId'),
     );
     request.headers.contentType = ContentType.json;
-    request.write(jsonEncode({'estado': status}));
+    request.write(jsonEncode({'estado': status, 'id_usuario': userId}));
 
     final response = await request.close();
     final responseBody = await response.transform(utf8.decoder).join();
@@ -148,6 +195,69 @@ class GroupApiClient {
       decoded['invitacion'] as Map<String, dynamic>,
     );
   }
+
+  Future<GroupInvitation> inviteToGroup({
+    required int groupId,
+    required int inviterId,
+    required String institutionalEmail,
+  }) async {
+    final request = await _httpClient.postUrl(
+      _baseUri.resolve('/grupos/$groupId/invitaciones'),
+    );
+    request.headers.contentType = ContentType.json;
+    request.write(
+      jsonEncode({
+        'id_invitador': inviterId,
+        'correo_institucional': institutionalEmail,
+      }),
+    );
+    final response = await request.close();
+    final responseBody = await response.transform(utf8.decoder).join();
+    final decoded = responseBody.isEmpty ? null : jsonDecode(responseBody);
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      final message = decoded is Map<String, dynamic>
+          ? decoded['error']?.toString()
+          : null;
+      throw GroupApiException(
+        message ?? 'No se pudo enviar la invitacion.',
+        statusCode: response.statusCode,
+      );
+    }
+    if (decoded is! Map<String, dynamic> ||
+        decoded['invitacion'] is! Map<String, dynamic>) {
+      throw const GroupApiException(
+        'La API devolvio una respuesta inesperada.',
+      );
+    }
+    return GroupInvitation.fromJson(
+      decoded['invitacion'] as Map<String, dynamic>,
+    );
+  }
+}
+
+class GroupMember {
+  const GroupMember({
+    required this.userId,
+    required this.name,
+    required this.email,
+    required this.role,
+  });
+
+  factory GroupMember.fromJson(Map<String, dynamic> json) {
+    return GroupMember(
+      userId: _toInt(json['id_usuario']),
+      name: json['usuario_nombre']?.toString() ?? 'Usuario',
+      email: json['correo_institucional']?.toString() ?? '',
+      role: json['rol_grupo']?.toString() ?? 'MIEMBRO',
+    );
+  }
+
+  final int? userId;
+  final String name;
+  final String email;
+  final String role;
+
+  bool get isAdministrator => role == 'ADMINISTRADOR';
 }
 
 class GroupSummary {

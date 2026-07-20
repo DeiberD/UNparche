@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'auth_state.dart';
+import 'group_api_client.dart';
 
 /// User profile screen
 ///
@@ -373,110 +374,116 @@ class _SectionTitle extends StatelessWidget {
 }
 
 /// User's groups list
-class _GroupsList extends StatelessWidget {
+class _GroupsList extends StatefulWidget {
   const _GroupsList();
 
   @override
+  State<_GroupsList> createState() => _GroupsListState();
+}
+
+class _GroupsListState extends State<_GroupsList> {
+  final _groupApiClient = GroupApiClient();
+  late Future<List<GroupSummary>> _groups;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final userId = AuthProvider.of(context).value.currentUser!.id;
+    _groups = _groupApiClient
+        .fetchGroups(userId: userId)
+        .then(
+          (groups) => groups
+              .where((group) => group.isMember || group.isCreator)
+              .toList(),
+        );
+  }
+
+  @override
   Widget build(BuildContext context) {
-    // Sample groups data
-    final groups = [
-      _GroupData(
-        name: 'GFAs',
-        subtitle: 'Next meeting: Tomorrow',
-        icon: 'A',
-        memberCount: 12,
-        isActive: true,
-      ),
-      _GroupData(
-        name: 'Compe',
-        subtitle: 'Upsolving',
-        icon: 'C',
-        memberCount: 8,
-        isActive: false,
-      ),
-    ];
-
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white.withAlpha(238),
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: ProfileScreen._ink.withAlpha(20)),
-        boxShadow: [
-          BoxShadow(
-            color: ProfileScreen._ink.withAlpha(12),
-            blurRadius: 14,
-            offset: const Offset(0, 6),
+    return FutureBuilder<List<GroupSummary>>(
+      future: _groups,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        if (snapshot.hasError) {
+          return const _ProfileGroupMessage(
+            icon: Icons.error_outline,
+            message: 'No se pudieron cargar tus grupos.',
+          );
+        }
+        final groups = snapshot.data ?? const [];
+        if (groups.isEmpty) {
+          return const _ProfileGroupMessage(
+            icon: Icons.groups_outlined,
+            message: 'Todavia no perteneces a ningun grupo.',
+          );
+        }
+        return Container(
+          decoration: BoxDecoration(
+            color: Colors.white.withAlpha(238),
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: ProfileScreen._ink.withAlpha(20)),
+            boxShadow: [
+              BoxShadow(
+                color: ProfileScreen._ink.withAlpha(12),
+                blurRadius: 14,
+                offset: const Offset(0, 6),
+              ),
+            ],
           ),
-        ],
-      ),
-      child: Column(
-        children: [
-          // Header with active groups counter
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 14, 16, 12),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  '${groups.where((g) => g.isActive).length} Active',
-                  style: TextStyle(
-                    color: ProfileScreen._ink.withAlpha(170),
-                    fontSize: 14,
-                    fontWeight: FontWeight.w700,
-                  ),
+          child: Column(
+            children: [
+              // Header with active groups counter
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 14, 16, 12),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      '${groups.length} ${groups.length == 1 ? 'grupo' : 'grupos'}',
+                      style: TextStyle(
+                        color: ProfileScreen._ink.withAlpha(170),
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    Container(
+                      padding: const EdgeInsets.all(6),
+                      decoration: BoxDecoration(
+                        color: ProfileScreen._ink,
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(
+                        Icons.mail_outline,
+                        size: 18,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ],
                 ),
-                Container(
-                  padding: const EdgeInsets.all(6),
-                  decoration: BoxDecoration(
-                    color: ProfileScreen._ink,
-                    shape: BoxShape.circle,
-                  ),
-                  child: const Icon(
-                    Icons.mail_outline,
-                    size: 18,
-                    color: Colors.white,
-                  ),
-                ),
-              ],
-            ),
-          ),
+              ),
 
-          Divider(
-            height: 1,
-            thickness: 1,
-            color: ProfileScreen._ink.withAlpha(15),
-          ),
+              Divider(
+                height: 1,
+                thickness: 1,
+                color: ProfileScreen._ink.withAlpha(15),
+              ),
 
-          // Groups list
-          ...groups.map((group) => _GroupTile(group: group)),
-        ],
-      ),
+              // Groups list
+              ...groups.map((group) => _ProfileGroupTile(group: group)),
+            ],
+          ),
+        );
+      },
     );
   }
 }
 
-/// Data model for a group
-class _GroupData {
-  const _GroupData({
-    required this.name,
-    required this.subtitle,
-    required this.icon,
-    required this.memberCount,
-    required this.isActive,
-  });
+class _ProfileGroupTile extends StatelessWidget {
+  const _ProfileGroupTile({required this.group});
 
-  final String name;
-  final String subtitle;
-  final String icon;
-  final int memberCount;
-  final bool isActive;
-}
-
-/// Individual group tile
-class _GroupTile extends StatelessWidget {
-  const _GroupTile({required this.group});
-
-  final _GroupData group;
+  final GroupSummary group;
 
   @override
   Widget build(BuildContext context) {
@@ -484,10 +491,11 @@ class _GroupTile extends StatelessWidget {
       color: Colors.transparent,
       child: InkWell(
         onTap: () {
-          // TODO: Navigate to group details
-          ScaffoldMessenger.of(
-            context,
-          ).showSnackBar(SnackBar(content: Text('Abriendo ${group.name}')));
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('${group.name}: ${group.memberCount} integrantes'),
+            ),
+          );
         },
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
@@ -498,7 +506,7 @@ class _GroupTile extends StatelessWidget {
                 radius: 24,
                 backgroundColor: ProfileScreen._accent,
                 child: Text(
-                  group.icon,
+                  group.name.isEmpty ? 'G' : group.name[0].toUpperCase(),
                   style: const TextStyle(
                     color: ProfileScreen._ink,
                     fontSize: 20,
@@ -523,7 +531,9 @@ class _GroupTile extends StatelessWidget {
                     ),
                     const SizedBox(height: 3),
                     Text(
-                      group.subtitle,
+                      group.isCreator
+                          ? 'Administrador · ${group.memberCount} integrantes'
+                          : 'Miembro · ${group.memberCount} integrantes',
                       style: TextStyle(
                         color: ProfileScreen._ink.withAlpha(160),
                         fontSize: 13,
@@ -543,6 +553,30 @@ class _GroupTile extends StatelessWidget {
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _ProfileGroupMessage extends StatelessWidget {
+  const _ProfileGroupMessage({required this.icon, required this.message});
+  final IconData icon;
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Colors.white.withAlpha(238),
+        borderRadius: BorderRadius.circular(18),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, color: ProfileScreen._ink),
+          const SizedBox(width: 12),
+          Expanded(child: Text(message)),
+        ],
       ),
     );
   }
