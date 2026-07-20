@@ -66,19 +66,5 @@
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
-	<!-- google_sign_in: URL scheme para el callback de autenticación de Google.
-	     El valor es el REVERSED_CLIENT_ID del cliente iOS registrado en Google Cloud Console.
-	     Client ID: 28638109204-f6qhsdstgop8or1viqs3qiqa6m528146.apps.googleusercontent.com -->
-	<key>CFBundleURLTypes</key>
-	<array>
-		<dict>
-			<key>CFBundleTypeRole</key>
-			<string>Editor</string>
-			<key>CFBundleURLSchemes</key>
-			<array>
-				<string>com.googleusercontent.apps.28638109204-f6qhsdstgop8or1viqs3qiqa6m528146</string>
-			</array>
-		</dict>
-	</array>
 </dict>
 </plist>
