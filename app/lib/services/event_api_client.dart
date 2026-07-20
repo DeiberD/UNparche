@@ -96,6 +96,30 @@ class EventApiClient {
     return upcoming;
   }
 
+  Future<List<EventSummary>> fetchAttendanceHistory({
+    required int userId,
+  }) async {
+    final request = await _httpClient.getUrl(
+      _baseUri.resolve('/usuarios/$userId/eventos/historial'),
+    );
+    final response = await request.close();
+    final decoded = await _decodeJsonMapResponse(
+      response,
+      fallbackErrorMessage: 'No se pudo cargar el historial de eventos.',
+    );
+    final events = decoded['eventos'];
+    if (events is! List) {
+      throw const EventApiException(
+        'La API devolvio un historial inesperado.',
+      );
+    }
+
+    return events
+        .whereType<Map<String, dynamic>>()
+        .map(EventSummary.fromJson)
+        .toList();
+  }
+
   Future<Map<String, dynamic>> confirmAttendance({
     required int eventId,
     required int userId,
