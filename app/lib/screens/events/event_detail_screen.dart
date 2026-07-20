@@ -69,6 +69,10 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  if (event.isArchived) ...[
+                    const _ArchivedEventNotice(),
+                    const SizedBox(height: 14),
+                  ],
                   if (!event.hasCompleteRequiredDetails) ...[
                     const _IncompleteEventNotice(),
                     const SizedBox(height: 14),
@@ -164,7 +168,7 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
             ),
             const SizedBox(height: 12),
             OutlinedButton.icon(
-              onPressed: event.id == null
+              onPressed: event.id == null || event.isArchived
                   ? null
                   : () => Navigator.of(context).push(
                       MaterialPageRoute(
@@ -182,7 +186,8 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
                 minimumSize: const Size.fromHeight(50),
               ),
             ),
-            if (event.organizerId == widget.currentUserId) ...[
+            if (!event.isArchived &&
+                event.organizerId == widget.currentUserId) ...[
               const SizedBox(height: 12),
               OutlinedButton.icon(
                 onPressed: _isDeleting ? null : _confirmDelete,
@@ -207,7 +212,7 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
                 children: [
                   Expanded(
                     child: FilledButton.icon(
-                      onPressed: event.hasLocation
+                      onPressed: event.hasLocation && !event.isArchived
                           ? () => Navigator.of(context).pop(true)
                           : null,
                       icon: const Icon(Icons.map_outlined),
@@ -222,7 +227,7 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
                       ),
                     ),
                   ),
-                  if (event.chatEnabled) ...[
+                  if (event.chatEnabled && !event.isArchived) ...[
                     const SizedBox(width: 10),
                     Expanded(
                       child: FilledButton.icon(
@@ -478,6 +483,40 @@ class _IncompleteEventNotice extends StatelessWidget {
               'Este evento tiene informacion incompleta. Algunos campos pueden aparecer como no disponibles.',
               style: TextStyle(
                 color: campusInk.withAlpha(205),
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+                height: 1.3,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ArchivedEventNotice extends StatelessWidget {
+  const _ArchivedEventNotice();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: campusAccent.withAlpha(150),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: campusInk.withAlpha(35)),
+      ),
+      child: const Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(Icons.inventory_2_outlined, color: campusInk, size: 20),
+          SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              'Este evento fue archivado por su ciclo de vida. Su informacion se conserva en tu historial.',
+              style: TextStyle(
+                color: campusInk,
                 fontSize: 12,
                 fontWeight: FontWeight.w700,
                 height: 1.3,

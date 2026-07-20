@@ -5,6 +5,7 @@ import '../../services/group_api_client.dart';
 import '../../services/event_api_client.dart';
 import '../../models/group_summary.dart';
 import '../../models/event_summary.dart';
+import '../events/attendance_history_screen.dart';
 
 /// User profile screen
 ///
@@ -197,7 +198,75 @@ class _ProfileScreenState extends State<ProfileScreen> {
             const _SectionTitle(title: 'Próximos Eventos'),
             const SizedBox(height: 12),
             const _UpcomingEventsList(),
+            const SizedBox(height: 32),
+
+            const _SectionTitle(title: 'Historial'),
+            const SizedBox(height: 12),
+            _HistoryEntry(
+              onPressed: () {
+                final user = AuthProvider.of(context).value.currentUser;
+                if (user == null) return;
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => AttendanceHistoryScreen(
+                      currentUserId: user.id,
+                    ),
+                  ),
+                );
+              },
+            ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class _HistoryEntry extends StatelessWidget {
+  const _HistoryEntry({required this.onPressed});
+
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.white.withAlpha(242),
+      borderRadius: BorderRadius.circular(18),
+      child: InkWell(
+        onTap: onPressed,
+        borderRadius: BorderRadius.circular(18),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: const Row(
+            children: [
+              Icon(Icons.history, color: ProfileScreen._ink),
+              SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Eventos asistidos',
+                      style: TextStyle(
+                        color: ProfileScreen._ink,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    SizedBox(height: 4),
+                    Text(
+                      'Consulta las actividades pasadas que confirmaste.',
+                      style: TextStyle(
+                        color: ProfileScreen._ink,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Icon(Icons.chevron_right, color: ProfileScreen._ink),
+            ],
+          ),
         ),
       ),
     );
