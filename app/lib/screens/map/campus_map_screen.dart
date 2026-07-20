@@ -20,6 +20,7 @@ import '../auth/login_screen.dart';
 import '../../widgets/common/bottom_nav_bar.dart';
 import '../events/create_event_screen.dart';
 import '../../theme/campus_colors.dart';
+import '../friends/friends_screen.dart';
 
 const _mapboxAccessToken = String.fromEnvironment('ACCESS_TOKEN');
 
@@ -372,7 +373,8 @@ class _CampusMapScreenState extends State<CampusMapScreen> {
   @override
   Widget build(BuildContext context) {
     final filteredEvents = _filteredEvents;
-    final showEventControls = _selectedTab != HomeTab.groups;
+    final showEventControls =
+        _selectedTab == HomeTab.map || _selectedTab == HomeTab.events;
 
     return Scaffold(
       body: SafeArea(
@@ -419,6 +421,7 @@ class _CampusMapScreenState extends State<CampusMapScreen> {
                   },
                 ),
                 HomeTab.groups => const GroupsScreen(),
+                HomeTab.friends => const FriendsScreen(),
               },
             ),
             const Positioned(left: 16, right: 16, top: 14, child: MapHeader()),

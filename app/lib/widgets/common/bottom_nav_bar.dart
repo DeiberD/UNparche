@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../theme/campus_colors.dart';
 
-enum HomeTab { map, events, groups }
+enum HomeTab { map, events, groups, friends }
 
 class BottomNavBar extends StatelessWidget {
   const BottomNavBar({
@@ -53,7 +53,8 @@ class BottomNavBar extends StatelessWidget {
           BottomNavItem(
             icon: Icons.person_outline,
             label: 'Amigos',
-            onPressed: () {},
+            selected: selectedTab == HomeTab.friends,
+            onPressed: () => onTabSelected(HomeTab.friends),
           ),
         ],
       ),
