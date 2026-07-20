@@ -6,9 +6,8 @@ import '../../services/event_api_client.dart';
 import '../../theme/campus_colors.dart';
 
 typedef AnnouncementLoader = Future<List<EventAnnouncement>> Function();
-typedef AnnouncementPublisher = Future<EventAnnouncement> Function(
-  String content,
-);
+typedef AnnouncementPublisher =
+    Future<EventAnnouncement> Function(String content);
 
 /// Presents the announcements for one event and exposes publishing only when
 /// the current user is its organizer.
@@ -35,8 +34,7 @@ class EventAnnouncementsSection extends StatefulWidget {
       _EventAnnouncementsSectionState();
 }
 
-class _EventAnnouncementsSectionState
-    extends State<EventAnnouncementsSection> {
+class _EventAnnouncementsSectionState extends State<EventAnnouncementsSection> {
   List<EventAnnouncement> _announcements = const [];
   bool _isLoading = true;
   bool _isPublishing = false;
@@ -55,8 +53,11 @@ class _EventAnnouncementsSectionState
     });
 
     try {
-      final announcements = await (widget.loader?.call() ??
-          widget.eventApiClient.fetchAnnouncements(eventId: widget.eventId));
+      final announcements =
+          await (widget.loader?.call() ??
+              widget.eventApiClient.fetchAnnouncements(
+                eventId: widget.eventId,
+              ));
       if (!mounted) return;
       setState(() => _announcements = announcements);
     } on EventApiException catch (error) {
@@ -71,17 +72,17 @@ class _EventAnnouncementsSectionState
   }
 
   Future<void> _openPublishDialog() async {
-    final controller = TextEditingController();
+    var draft = '';
     final content = await showDialog<String>(
       context: context,
       builder: (dialogContext) => AlertDialog(
         title: const Text('Publicar anuncio'),
         content: TextField(
-          controller: controller,
           autofocus: true,
           maxLength: 1000,
           minLines: 3,
           maxLines: 6,
+          onChanged: (value) => draft = value,
           decoration: const InputDecoration(
             hintText: 'Escribe el cambio o novedad del evento',
             border: OutlineInputBorder(),
@@ -94,7 +95,7 @@ class _EventAnnouncementsSectionState
           ),
           FilledButton(
             onPressed: () {
-              final value = controller.text.trim();
+              final value = draft.trim();
               if (value.isNotEmpty) Navigator.of(dialogContext).pop(value);
             },
             child: const Text('Publicar'),
@@ -102,22 +103,22 @@ class _EventAnnouncementsSectionState
         ],
       ),
     );
-    controller.dispose();
     if (content == null || !mounted) return;
 
     setState(() => _isPublishing = true);
     try {
-      final announcement = await (widget.publisher?.call(content) ??
-          widget.eventApiClient.publishAnnouncement(
-            eventId: widget.eventId,
-            authorId: widget.currentUserId,
-            content: content,
-          ));
+      final announcement =
+          await (widget.publisher?.call(content) ??
+              widget.eventApiClient.publishAnnouncement(
+                eventId: widget.eventId,
+                authorId: widget.currentUserId,
+                content: content,
+              ));
       if (!mounted) return;
       setState(() => _announcements = [announcement, ..._announcements]);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Anuncio publicado.')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Anuncio publicado.')));
     } on EventApiException catch (error) {
       _showMessage(error.message);
     } catch (_) {
@@ -129,7 +130,9 @@ class _EventAnnouncementsSectionState
 
   void _showMessage(String message) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
   }
 
   @override
@@ -258,7 +261,7 @@ class _AnnouncementMessage extends StatelessWidget {
           Icon(icon, color: campusInk.withAlpha(170)),
           const SizedBox(width: 10),
           Expanded(child: Text(message)),
-          if (action != null) action!,
+          action ?? const SizedBox.shrink(),
         ],
       ),
     );

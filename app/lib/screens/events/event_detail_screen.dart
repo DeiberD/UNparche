@@ -166,8 +166,7 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
                 eventId: event.id!,
                 currentUserId: widget.currentUserId,
                 canPublish:
-                    event.isActive &&
-                    event.organizerId == widget.currentUserId,
+                    event.isActive && event.organizerId == widget.currentUserId,
                 eventApiClient: widget.eventApiClient,
               ),
               const SizedBox(height: 12),
@@ -297,10 +296,7 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
           eventId: eventId,
           userId: widget.currentUserId,
         );
-        _updateAttendanceStatus(
-          'CANCELADA',
-          notificationsEnabled: false,
-        );
+        _updateAttendanceStatus('CANCELADA', notificationsEnabled: false);
         _showAttendanceMessage('Asistencia cancelada.');
       } else {
         await widget.eventApiClient.confirmAttendance(
@@ -392,10 +388,7 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
     }
   }
 
-  void _updateAttendanceStatus(
-    String status, {
-    bool? notificationsEnabled,
-  }) {
+  void _updateAttendanceStatus(String status, {bool? notificationsEnabled}) {
     final updatedEvent = _event.copyWith(
       attendanceStatus: status,
       notificationsEnabled: notificationsEnabled,
@@ -632,38 +625,6 @@ String formatEventTime(DateTime? start) {
   final hour = localStart.hour.toString().padLeft(2, '0');
   final minute = localStart.minute.toString().padLeft(2, '0');
   return '$hour:$minute';
-}
-
-String _titleCaseOrFallback(String? value, String fallback) {
-  final text = value?.trim();
-  if (text == null || text.isEmpty) {
-    return fallback;
-  }
-
-  final lower = text.toLowerCase().replaceAll('_', ' ');
-  return lower
-      .split(' ')
-      .where((part) => part.isNotEmpty)
-      .map((part) => part[0].toUpperCase() + part.substring(1))
-      .join(' ');
-}
-
-String _monthLabel(int month) {
-  return switch (month) {
-    1 => 'Enero',
-    2 => 'Febrero',
-    3 => 'Marzo',
-    4 => 'Abril',
-    5 => 'Mayo',
-    6 => 'Junio',
-    7 => 'Julio',
-    8 => 'Agosto',
-    9 => 'Septiembre',
-    10 => 'Octubre',
-    11 => 'Noviembre',
-    12 => 'Diciembre',
-    _ => '',
-  };
 }
 
 String shortEventDate(DateTime date) {
