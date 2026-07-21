@@ -461,6 +461,171 @@ describe("UNparche API worker", () => {
 		await expect(response.json()).resolves.toEqual({ ok: true, evento });
 	});
 
+	it("lists announcements in an event detail", async () => {
+		const anuncios = [{
+			id_anuncio: 3,
+			contenido: "El salon cambio al 201.",
+			id_autor: 1,
+			id_evento: 8,
+		}];
+		let prepareCall = 0;
+		let announcementSql = "";
+		const request = new IncomingRequest("http://example.com/eventos/8/anuncios");
+		const ctx = createExecutionContext();
+		const testEnv = {
+			unparche_db: {
+				prepare: (query: string) => {
+					prepareCall += 1;
+					if (prepareCall === 1) {
+						return { bind: () => ({ first: async () => ({ id_evento: 8 }) }) };
+					}
+					announcementSql = query;
+					return { bind: () => ({ all: async () => ({ results: anuncios }) }) };
+				},
+			} as unknown as D1Database,
+		} as Env & { unparche_db: D1Database };
+
+		const response = await worker.fetch(request, testEnv, ctx);
+		await waitOnExecutionContext(ctx);
+
+		expect(response.status).toBe(200);
+		expect(announcementSql).toContain("LIMIT 1");
+		await expect(response.json()).resolves.toEqual({
+			ok: true,
+			id_evento: 8,
+			anuncios,
+		});
+	});
+
+	it("rejects an announcement from a user who is not the organizer", async () => {
+		const request = new IncomingRequest("http://example.com/eventos/8/anuncios", {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ id_autor: 2, contenido: "Cambio de lugar" }),
+		});
+		const ctx = createExecutionContext();
+		const testEnv = {
+			unparche_db: {
+				prepare: () => ({
+					bind: () => ({
+						first: async () => ({
+							id_evento: 8,
+							titulo: "Taller",
+							estado: "PROGRAMADO",
+							fecha_eliminacion: null,
+							id_organizador: 1,
+						}),
+					}),
+				}),
+			} as unknown as D1Database,
+		} as Env & { unparche_db: D1Database };
+
+		const response = await worker.fetch(request, testEnv, ctx);
+		await waitOnExecutionContext(ctx);
+
+		expect(response.status).toBe(403);
+		await expect(response.json()).resolves.toEqual({
+			ok: false,
+			error: "Solo el organizador puede publicar anuncios.",
+		});
+	});
+
+	it("publishes an announcement and targets opted-in confirmed attendees", async () => {
+		const anuncio = {
+			id_anuncio: 4,
+			contenido: "Empezamos media hora mas tarde.",
+			id_autor: 1,
+			id_evento: 8,
+		};
+		let prepareCall = 0;
+		let recipientSql = "";
+		const request = new IncomingRequest("http://example.com/eventos/8/anuncios", {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ id_autor: 1, contenido: anuncio.contenido }),
+		});
+		const ctx = createExecutionContext();
+		const testEnv = {
+			unparche_db: {
+				prepare: (query: string) => {
+					prepareCall += 1;
+					if (prepareCall === 1) {
+						return { bind: () => ({ first: async () => ({
+							id_evento: 8,
+							titulo: "Taller",
+							estado: "PROGRAMADO",
+							fecha_eliminacion: null,
+							id_organizador: 1,
+						}) }) };
+					}
+					if (prepareCall === 2) {
+						return { bind: () => ({ run: async () => ({ meta: { changes: 1, last_row_id: 4 } }) }) };
+					}
+					if (prepareCall === 3) {
+						return { bind: () => ({ first: async () => anuncio }) };
+					}
+					recipientSql = query;
+					return { bind: () => ({ all: async () => ({ results: [{ correo_institucional: "user@unal.edu.co" }] }) }) };
+				},
+			} as unknown as D1Database,
+		} as Env & { unparche_db: D1Database };
+
+		const response = await worker.fetch(request, testEnv, ctx);
+		await waitOnExecutionContext(ctx);
+
+		expect(response.status).toBe(201);
+		expect(recipientSql).toContain("a.estado = 'CONFIRMADA'");
+		expect(recipientSql).toContain("a.notificaciones_activas = 1");
+		await expect(response.json()).resolves.toEqual({
+			ok: true,
+			message: "Anuncio publicado correctamente.",
+			anuncio,
+			notificaciones_enviadas: 0,
+		});
+	});
+
+	it("updates announcement notifications for a confirmed attendee", async () => {
+		let prepareCall = 0;
+		let updateBindings: unknown[] = [];
+		const request = new IncomingRequest(
+			"http://example.com/eventos/8/asistencias/2/notificaciones",
+			{
+				method: "PATCH",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({ activas: true }),
+			}
+		);
+		const ctx = createExecutionContext();
+		const testEnv = {
+			unparche_db: {
+				prepare: () => {
+					prepareCall += 1;
+					if (prepareCall === 1) {
+						return { bind: () => ({ first: async () => ({ id_asistencia: 9 }) }) };
+					}
+					return {
+						bind: (...values: unknown[]) => {
+							updateBindings = values;
+							return { run: async () => ({ success: true }) };
+						},
+					};
+				},
+			} as unknown as D1Database,
+		} as Env & { unparche_db: D1Database };
+
+		const response = await worker.fetch(request, testEnv, ctx);
+		await waitOnExecutionContext(ctx);
+
+		expect(response.status).toBe(200);
+		expect(updateBindings).toEqual([1, 8, 2]);
+		await expect(response.json()).resolves.toEqual({
+			ok: true,
+			id_evento: 8,
+			id_usuario: 2,
+			notificaciones_activas: true,
+		});
+	});
+
 	it("lists attended event history including lifecycle-archived events", async () => {
 		const eventos = [
 			{
