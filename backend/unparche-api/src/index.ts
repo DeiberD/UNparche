@@ -1372,6 +1372,54 @@ export default {
 			});
 		}
 
+		// DELETE salir de un grupo (/grupos/:id/miembros/:idUsuario)
+		const salirGrupoMatch = url.pathname.match(/^\/grupos\/(\d+)\/miembros\/(\d+)$/);
+		if (request.method === "DELETE" && salirGrupoMatch) {
+			const idGrupo = Number(salirGrupoMatch[1]);
+			const idUsuario = Number(salirGrupoMatch[2]);
+
+			// Verificar que el grupo existe y obtener su administrador
+			const grupo = await env.unparche_db.prepare(
+				`SELECT id_grupo, id_administrador FROM grupo WHERE id_grupo = ?`
+			).bind(idGrupo).first<{ id_grupo: number; id_administrador: number }>();
+
+			if (!grupo) {
+				return json({ ok: false, error: "Grupo no encontrado." }, { status: 404 });
+			}
+
+			// Verificar que el usuario tiene membresía activa
+			const membresia = await env.unparche_db.prepare(
+				`SELECT id_membresia, rol_grupo FROM membresia_grupo
+				 WHERE id_grupo = ? AND id_usuario = ? AND estado = 'ACTIVA'`
+			).bind(idGrupo, idUsuario).first<{ id_membresia: number; rol_grupo: string }>();
+
+			if (!membresia) {
+				return json({ ok: false, error: "El usuario no pertenece a este grupo." }, { status: 404 });
+			}
+
+			// El administrador no puede salir si es el único con ese rol:
+			// bloquear la salida para evitar grupos sin administrador.
+			if (membresia.rol_grupo === "ADMINISTRADOR") {
+				const otrosAdmins = await env.unparche_db.prepare(
+					`SELECT COUNT(*) as cnt FROM membresia_grupo
+					 WHERE id_grupo = ? AND rol_grupo = 'ADMINISTRADOR' AND estado = 'ACTIVA' AND id_usuario != ?`
+				).bind(idGrupo, idUsuario).first<{ cnt: number }>();
+
+				if (!otrosAdmins || otrosAdmins.cnt === 0) {
+					return json(
+						{ ok: false, error: "Eres el único administrador del grupo. Transfiere la administración antes de salir." },
+						{ status: 409 }
+					);
+				}
+			}
+
+			await env.unparche_db.prepare(
+				`UPDATE membresia_grupo SET estado = 'INACTIVA' WHERE id_membresia = ?`
+			).bind(membresia.id_membresia).run();
+
+			return json({ ok: true, message: "Has salido del grupo correctamente." });
+		}
+
 		// POST agregar usuario a un grupo (/grupos/:id/miembros)
 		if (request.method === "POST" && miembrosGrupoMatch) {
 			return json(
@@ -3232,13 +3280,14 @@ export default {
 
 			if (
 				estado !== "ACEPTADA" &&
-				estado !== "RECHAZADA"
+				estado !== "RECHAZADA" &&
+				estado !== "ELIMINADA"
 			) {
 				return json(
 					{
 						ok: false,
 						error:
-							"estado debe ser ACEPTADA o RECHAZADA.",
+							"estado debe ser ACEPTADA, RECHAZADA o ELIMINADA.",
 					},
 					{ status: 400 }
 				);
@@ -3265,7 +3314,16 @@ export default {
 				);
 			}
 
-			if (amistadActual.estado !== "PENDIENTE") {
+			// ACEPTADA/RECHAZADA solo pueden aplicarse a una solicitud PENDIENTE.
+			// ELIMINADA solo puede aplicarse a una amistad ya ACEPTADA.
+			if (estado === "ELIMINADA") {
+				if (amistadActual.estado !== "ACEPTADA") {
+					return json(
+						{ ok: false, error: "Solo se puede eliminar una amistad que ya fue aceptada." },
+						{ status: 409 }
+					);
+				}
+			} else if (amistadActual.estado !== "PENDIENTE") {
 				return json(
 					{
 						ok: false,
@@ -3286,18 +3344,14 @@ export default {
 				.bind(estado, idAmistad)
 				.run();
 
-			const amistad = await selectAmistadById(
-				env.unparche_db,
-				idAmistad
-			);
-
 			return json({
 				ok: true,
 				message:
 					estado === "ACEPTADA"
 						? "Solicitud de amistad aceptada."
-						: "Solicitud de amistad rechazada.",
-				amistad,
+						: estado === "ELIMINADA"
+							? "Amistad eliminada."
+							: "Solicitud de amistad rechazada.",
 			});
 		}
 
