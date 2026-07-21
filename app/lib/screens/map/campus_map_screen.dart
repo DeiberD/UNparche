@@ -39,6 +39,8 @@ class _CampusMapScreenState extends State<CampusMapScreen> {
   EventTimeScope _eventTimeScope = EventTimeScope.future;
   EventAttendanceScope _eventAttendanceScope = EventAttendanceScope.all;
   EventSummary? _focusedEvent;
+
+  bool _focusToggle = false;
   bool _isLoadingEvents = false;
   String? _eventsError;
 
@@ -347,6 +349,7 @@ class _CampusMapScreenState extends State<CampusMapScreen> {
       setState(() {
         _selectedTab = HomeTab.map;
         _focusedEvent = event;
+        _focusToggle = !_focusToggle;
       });
     }
   }
@@ -396,6 +399,7 @@ class _CampusMapScreenState extends State<CampusMapScreen> {
                       : UNALMap(
                           events: filteredEvents,
                           focusedEvent: _focusedEvent,
+                          focusToggle: _focusToggle,
                           onEventTap: _openEventDetails,
                         ),
                 HomeTab.events => EventsListView(
@@ -506,11 +510,13 @@ class UNALMap extends StatefulWidget {
     required this.events,
     required this.onEventTap,
     this.focusedEvent,
+    this.focusToggle = false,
   });
 
   final List<EventSummary> events;
   final ValueChanged<EventSummary> onEventTap;
   final EventSummary? focusedEvent;
+  final bool focusToggle;
 
   @override
   State<UNALMap> createState() => _UNALMapState();
@@ -523,6 +529,8 @@ class _UNALMapState extends State<UNALMap> {
   String? _statusMessage = 'Cargando mapa...';
   bool _hasError = false;
 
+  static const _focusedEventZoom = 18.5;
+
   static const _clusterTapInteractionId = 'event-cluster-tap';
   static const _eventTapInteractionId = 'unclustered-event-tap';
 
@@ -532,6 +540,32 @@ class _UNALMapState extends State<UNALMap> {
     northeast: Point(coordinates: Position(-74.0725, 4.6505)),
     infiniteBounds: false,
   );
+
+  static const _defaultCenterLng = -74.0840;
+  static const _defaultCenterLat = 4.6382;
+  static const _defaultZoom = 15.6;
+
+  CameraViewportState _initialViewport() {
+    final focused = widget.focusedEvent;
+    if (focused != null &&
+        focused.latitude != null &&
+        focused.longitude != null) {
+
+      return CameraViewportState(
+        center: Point(
+          coordinates: Position(focused.longitude!, focused.latitude!),
+        ),
+        zoom: _focusedEventZoom,
+      );
+    }
+
+    return CameraViewportState(
+      center: Point(
+        coordinates: Position(_defaultCenterLng, _defaultCenterLat),
+      ),
+      zoom: _defaultZoom,
+    );
+  }
 
   Future<void> _onMapCreated(MapboxMap mapboxMap) async {
     _mapboxMap = mapboxMap;
@@ -573,7 +607,8 @@ class _UNALMapState extends State<UNALMap> {
     super.didUpdateWidget(oldWidget);
 
     if (oldWidget.events != widget.events ||
-        oldWidget.focusedEvent?.id != widget.focusedEvent?.id) {
+        oldWidget.focusedEvent?.id != widget.focusedEvent?.id ||
+        oldWidget.focusToggle != widget.focusToggle) {
       _syncEventMarkers();
     }
   }
@@ -604,7 +639,7 @@ class _UNALMapState extends State<UNALMap> {
           center: Point(
             coordinates: Position(latest.longitude!, latest.latitude!),
           ),
-          zoom: 16.5,
+          zoom: _focusedEventZoom,
         ),
       );
     }
@@ -762,10 +797,7 @@ class _UNALMapState extends State<UNALMap> {
         MapWidget(
           key: const ValueKey('campusMap'),
           styleUri: MapboxStyles.MAPBOX_STREETS,
-          viewport: CameraViewportState(
-            center: Point(coordinates: Position(-74.0840, 4.6382)),
-            zoom: 15.6,
-          ),
+          viewport: _initialViewport(),
           onMapCreated: _onMapCreated,
           onStyleLoadedListener: (_) async {
             try {
@@ -1055,25 +1087,7 @@ class MapHeader extends StatelessWidget {
                   delegate: _EventSearchDelegate(
                     events: state._allEvents,
                     onEventSelected: (event) {
-                      Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (_) => EventDetailScreen(
-                            event: event,
-                            eventApiClient: state._eventApiClient,
-                            currentUserId:
-                                AuthProvider.of(
-                                  context,
-                                ).value.currentUser?.id ??
-                                0,
-                            onAttendanceChanged: (_) {
-                              state._loadVisibleEvents();
-                            },
-                            onDeleted: (_) {
-                              state._loadVisibleEvents();
-                            },
-                          ),
-                        ),
-                      );
+                      state._openEventDetails(event);
                     },
                   ),
                 );
