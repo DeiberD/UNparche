@@ -177,6 +177,12 @@ class _FriendshipSectionState extends State<FriendshipSection> {
                       onTap: () {
                         _openUserProfile(friend.id);
                       },
+                      onDelete: friend.friendshipId != null
+                          ? () => _removeFriend(
+                                friend.friendshipId!,
+                                '${friend.nombre} ${friend.apellido}',
+                              )
+                          : null,
                     ),
                   ),
                 ],
@@ -186,6 +192,53 @@ class _FriendshipSectionState extends State<FriendshipSection> {
         ),
       ],
     );
+  }
+
+  Future<void> _removeFriend(int friendshipId, String friendName) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Eliminar amigo'),
+        content: Text('¿Estás seguro de que quieres eliminar a $friendName de tus amigos?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancelar'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: const Text('Eliminar'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true || !mounted) {
+      return;
+    }
+
+    try {
+      await _client.removeFriend(friendshipId: friendshipId);
+
+      if (!mounted) return;
+
+      final currentUser = AuthProvider.of(context).value.currentUser;
+      if (currentUser != null) {
+        setState(() {
+          _friends = _client.fetchFriends(userId: currentUser.id);
+        });
+      }
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Amistad eliminada correctamente.')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.toString().replaceAll('Exception: ', ''))),
+      );
+    }
   }
 
   Widget _buildUserSearch() {
