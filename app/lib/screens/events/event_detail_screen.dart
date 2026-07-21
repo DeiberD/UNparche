@@ -33,7 +33,18 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
   late EventSummary _event;
   bool _isUpdatingAttendance = false;
   bool _isUpdatingNotifications = false;
+  bool _isCancelling = false;
   bool _isDeleting = false;
+
+  bool get _canCancelEvent {
+    final start = _event.start;
+    return _event.id != null &&
+        _event.organizerId == widget.currentUserId &&
+        !_event.isArchived &&
+        _event.status == 'PROGRAMADO' &&
+        start != null &&
+        start.isAfter(DateTime.now());
+  }
 
   @override
   void initState() {
@@ -73,6 +84,10 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
                 children: [
                   if (event.isArchived) ...[
                     const _ArchivedEventNotice(),
+                    const SizedBox(height: 14),
+                  ],
+                  if (event.isCancelled) ...[
+                    const _CancelledEventNotice(),
                     const SizedBox(height: 14),
                   ],
                   if (!event.hasCompleteRequiredDetails) ...[
@@ -206,21 +221,42 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
             if (!event.isArchived &&
                 event.organizerId == widget.currentUserId) ...[
               const SizedBox(height: 12),
-              OutlinedButton.icon(
-                onPressed: _isDeleting ? null : _confirmDelete,
-                icon: _isDeleting
-                    ? const SizedBox.square(
-                        dimension: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Icon(Icons.delete_outline),
-                label: Text(_isDeleting ? 'Eliminando...' : 'Eliminar evento'),
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: Colors.red.shade700,
-                  side: BorderSide(color: Colors.red.shade300),
-                  minimumSize: const Size.fromHeight(50),
+              if (_canCancelEvent)
+                OutlinedButton.icon(
+                  onPressed: _isCancelling ? null : _confirmCancellation,
+                  icon: _isCancelling
+                      ? const SizedBox.square(
+                          dimension: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.event_busy_outlined),
+                  label: Text(
+                    _isCancelling ? 'Cancelando...' : 'Cancelar evento',
+                  ),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: Colors.red.shade700,
+                    side: BorderSide(color: Colors.red.shade300),
+                    minimumSize: const Size.fromHeight(50),
+                  ),
+                )
+              else if (!event.isCancelled)
+                OutlinedButton.icon(
+                  onPressed: _isDeleting ? null : _confirmDelete,
+                  icon: _isDeleting
+                      ? const SizedBox.square(
+                          dimension: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.delete_outline),
+                  label: Text(
+                    _isDeleting ? 'Eliminando...' : 'Eliminar evento',
+                  ),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: Colors.red.shade700,
+                    side: BorderSide(color: Colors.red.shade300),
+                    minimumSize: const Size.fromHeight(50),
+                  ),
                 ),
-              ),
             ],
             const SizedBox(height: 12),
             SizedBox(
@@ -229,7 +265,7 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
                 children: [
                   Expanded(
                     child: FilledButton.icon(
-                      onPressed: event.hasLocation && !event.isArchived
+                      onPressed: event.hasLocation && event.isActive
                           ? () => Navigator.of(context).pop(true)
                           : null,
                       icon: const Icon(Icons.map_outlined),
@@ -342,6 +378,55 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
       _showAttendanceMessage('No se pudo actualizar la preferencia de avisos.');
     } finally {
       if (mounted) setState(() => _isUpdatingNotifications = false);
+    }
+  }
+
+  Future<void> _confirmCancellation() async {
+    final eventId = _event.id;
+    if (eventId == null || _isCancelling || !_canCancelEvent) return;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Cancelar evento'),
+        content: Text(
+          '¿Seguro que deseas cancelar “${_event.title}”? Dejará de mostrarse como activo y su chat se cerrará.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Volver'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            style: FilledButton.styleFrom(backgroundColor: Colors.red.shade700),
+            child: const Text('Sí, cancelar'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    setState(() => _isCancelling = true);
+    try {
+      await widget.eventApiClient.cancelEvent(
+        eventId: eventId,
+        organizerId: widget.currentUserId,
+      );
+      final updatedEvent = _event.copyWith(
+        status: 'CANCELADO',
+        chatEnabled: false,
+      );
+      if (!mounted) return;
+      setState(() => _event = updatedEvent);
+      widget.onAttendanceChanged(updatedEvent);
+      _showAttendanceMessage('Evento cancelado correctamente.');
+    } on EventApiException catch (error) {
+      _showAttendanceMessage(error.message);
+    } catch (_) {
+      _showAttendanceMessage('No se pudo cancelar el evento.');
+    } finally {
+      if (mounted) setState(() => _isCancelling = false);
     }
   }
 
@@ -582,6 +667,40 @@ class _ArchivedEventNotice extends StatelessWidget {
           Expanded(
             child: Text(
               'Este evento fue archivado por su ciclo de vida. Su informacion se conserva en tu historial.',
+              style: TextStyle(
+                color: campusInk,
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+                height: 1.3,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _CancelledEventNotice extends StatelessWidget {
+  const _CancelledEventNotice();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFE9E5),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFF9B3A2A).withAlpha(80)),
+      ),
+      child: const Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(Icons.event_busy_outlined, color: Color(0xFF7A2E22), size: 20),
+          SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              'Este evento fue cancelado por su organizador y ya no está disponible como actividad.',
               style: TextStyle(
                 color: campusInk,
                 fontSize: 12,
