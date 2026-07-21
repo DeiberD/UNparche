@@ -90,7 +90,7 @@ type CrearSolicitudAmistadBody = {
 };
 
 type ActualizarSolicitudAmistadBody = {
-	estado?: "ACEPTADA" | "RECHAZADA";
+	estado?: "ACEPTADA" | "RECHAZADA" | "ELIMINADA";
 };
 
 
