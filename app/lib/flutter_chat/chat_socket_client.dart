@@ -50,7 +50,7 @@ class ChatSocketClient {
       return _configuredChatServerHost;
     }
 
-    return '186.31.167.146'; // IP publica del server de chat.
+    return '186.31.2.212'; // IP publica del server de chat.
   }
 
   static int get defaultPort => _configuredChatServerPort;
