@@ -1047,7 +1047,8 @@ class MapHeader extends StatelessWidget {
           ),
           IconButton(
             onPressed: () {
-              final state = context.findAncestorStateOfType<_CampusMapScreenState>();
+              final state = context
+                  .findAncestorStateOfType<_CampusMapScreenState>();
               if (state != null) {
                 showSearch(
                   context: context,
@@ -1059,7 +1060,11 @@ class MapHeader extends StatelessWidget {
                           builder: (_) => EventDetailScreen(
                             event: event,
                             eventApiClient: state._eventApiClient,
-                            currentUserId: AuthProvider.of(context).value.currentUser?.id ?? 0,
+                            currentUserId:
+                                AuthProvider.of(
+                                  context,
+                                ).value.currentUser?.id ??
+                                0,
                             onAttendanceChanged: (_) {
                               state._loadVisibleEvents();
                             },
@@ -1083,17 +1088,14 @@ class MapHeader extends StatelessWidget {
       ),
     );
   }
-  }
 }
 
 class _EventSearchDelegate extends SearchDelegate<EventSummary?> {
-  _EventSearchDelegate({
-    required this.events,
-    required this.onEventSelected,
-  }) : super(
-          searchFieldLabel: 'Buscar eventos...',
-          searchFieldStyle: const TextStyle(color: campusInk),
-        );
+  _EventSearchDelegate({required this.events, required this.onEventSelected})
+    : super(
+        searchFieldLabel: 'Buscar eventos...',
+        searchFieldStyle: const TextStyle(color: campusInk),
+      );
 
   final List<EventSummary> events;
   final void Function(EventSummary) onEventSelected;
@@ -1121,11 +1123,12 @@ class _EventSearchDelegate extends SearchDelegate<EventSummary?> {
   Widget buildResults(BuildContext context) => _buildSuggestionsAndResults();
 
   @override
-  Widget buildSuggestions(BuildContext context) => _buildSuggestionsAndResults();
+  Widget buildSuggestions(BuildContext context) =>
+      _buildSuggestionsAndResults();
 
   Widget _buildSuggestionsAndResults() {
     final normalizedQuery = query.trim().toLowerCase();
-    
+
     final results = events.where((e) {
       return e.title.toLowerCase().contains(normalizedQuery);
     }).toList();
@@ -1150,10 +1153,13 @@ class _EventSearchDelegate extends SearchDelegate<EventSummary?> {
           ),
           title: Text(
             event.title,
-            style: const TextStyle(fontWeight: FontWeight.w600, color: campusInk),
+            style: const TextStyle(
+              fontWeight: FontWeight.w600,
+              color: campusInk,
+            ),
           ),
           subtitle: Text(
-            event.location,
+            event.description,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
           ),
