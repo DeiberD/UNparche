@@ -83,6 +83,15 @@ type CrearMensajeChatBody = {
 	timestamp_ms?: number;
 };
 
+type CrearAnuncioBody = {
+	contenido?: string;
+	id_autor?: number;
+};
+
+type ActualizarNotificacionesBody = {
+	activas?: boolean;
+};
+
 // Event lifecycle rules shared by list, detail, update and cleanup queries.
 const EVENT_RETENTION_HOURS = 24;
 const EVENT_HISTORY_MONTHS = 6;
@@ -339,6 +348,21 @@ const buildEmailHtml = (tipo: "registro" | "reset_password", codigo: string): st
 </body>
 </html>`;
 };
+
+const escapeHtml = (value: string): string => value
+	.replaceAll("&", "&amp;")
+	.replaceAll("<", "&lt;")
+	.replaceAll(">", "&gt;")
+	.replaceAll('"', "&quot;")
+	.replaceAll("'", "&#039;");
+
+/** Builds a small email notification without trusting announcement HTML. */
+const buildAnnouncementEmailHtml = (eventTitle: string, content: string): string => `
+	<div style="font-family:Arial,Helvetica,sans-serif;color:#263020;line-height:1.5">
+		<h2 style="margin-bottom:8px">Novedad en ${escapeHtml(eventTitle)}</h2>
+		<p style="white-space:pre-wrap">${escapeHtml(content)}</p>
+		<p style="color:#666;font-size:12px">Recibiste este correo porque activaste las novedades del evento en UNparche.</p>
+	</div>`;
 
 /** Envía un correo usando la API de Resend */
 const sendEmail = async (
@@ -1607,6 +1631,146 @@ export default {
 			});
 		}
 
+		// -------------------------------------------------------------------------
+		// Event announcements
+		// -------------------------------------------------------------------------
+		const anunciosEventoMatch = url.pathname.match(/^\/eventos\/(\d+)\/anuncios$/);
+
+		if (request.method === "GET" && anunciosEventoMatch) {
+			const idEvento = Number(anunciosEventoMatch[1]);
+			const evento = await env.unparche_db
+				.prepare("SELECT id_evento FROM evento WHERE id_evento = ?")
+				.bind(idEvento)
+				.first();
+
+			if (!evento) {
+				return json({ ok: false, error: "Evento no encontrado." }, { status: 404 });
+			}
+
+			const anuncios = await env.unparche_db
+				.prepare(
+					`SELECT
+						a.id_anuncio,
+						a.contenido,
+						a.fecha_publicacion,
+						a.id_autor,
+						u.nombre || ' ' || u.apellido AS autor_nombre,
+						u.nickname AS autor_nickname,
+						a.id_evento
+					FROM anuncio a
+					JOIN usuario u ON u.id_usuario = a.id_autor
+					WHERE a.id_evento = ?
+					ORDER BY datetime(a.fecha_publicacion) DESC, a.id_anuncio DESC
+					LIMIT 1`
+				)
+				.bind(idEvento)
+				.all();
+
+			return json({ ok: true, id_evento: idEvento, anuncios: anuncios.results });
+		}
+
+		if (request.method === "POST" && anunciosEventoMatch) {
+			const idEvento = Number(anunciosEventoMatch[1]);
+			let body: CrearAnuncioBody;
+			try {
+				body = await request.json();
+			} catch {
+				return json({ ok: false, error: "El body debe ser JSON valido." }, { status: 400 });
+			}
+
+			const idAutor = toInteger(body.id_autor);
+			const contenido = typeof body.contenido === "string" ? body.contenido.trim() : "";
+			if (idAutor === null || !contenido) {
+				return json({ ok: false, error: "id_autor y contenido son obligatorios." }, { status: 400 });
+			}
+			if (contenido.length > 1000) {
+				return json({ ok: false, error: "El anuncio no puede superar 1000 caracteres." }, { status: 400 });
+			}
+
+			const evento = await env.unparche_db
+				.prepare(
+					`SELECT id_evento, titulo, estado, fecha_eliminacion, id_organizador
+					FROM evento
+					WHERE id_evento = ?`
+				)
+				.bind(idEvento)
+				.first<{
+					id_evento: number;
+					titulo: string;
+					estado: string;
+					fecha_eliminacion: string | null;
+					id_organizador: number;
+				}>();
+
+			if (!evento) {
+				return json({ ok: false, error: "Evento no encontrado." }, { status: 404 });
+			}
+			if (evento.id_organizador !== idAutor) {
+				return json({ ok: false, error: "Solo el organizador puede publicar anuncios." }, { status: 403 });
+			}
+			if (evento.fecha_eliminacion !== null || ["CANCELADO", "FINALIZADO"].includes(evento.estado)) {
+				return json({ ok: false, error: "No se pueden publicar anuncios en un evento finalizado." }, { status: 409 });
+			}
+
+			const result = await env.unparche_db
+				.prepare("INSERT INTO anuncio (contenido, id_autor, id_evento) VALUES (?, ?, ?)")
+				.bind(contenido, idAutor, idEvento)
+				.run();
+			const idAnuncio = Number(result.meta.last_row_id);
+			const anuncio = await env.unparche_db
+				.prepare(
+					`SELECT
+						a.id_anuncio,
+						a.contenido,
+						a.fecha_publicacion,
+						a.id_autor,
+						u.nombre || ' ' || u.apellido AS autor_nombre,
+						u.nickname AS autor_nickname,
+						a.id_evento
+					FROM anuncio a
+					JOIN usuario u ON u.id_usuario = a.id_autor
+					WHERE a.id_anuncio = ?`
+				)
+				.bind(idAnuncio)
+				.first();
+
+			const destinatarios = await env.unparche_db
+				.prepare(
+					`SELECT u.correo_institucional
+					FROM asistencia a
+					JOIN usuario u ON u.id_usuario = a.id_usuario
+					WHERE a.id_evento = ?
+						AND a.estado = 'CONFIRMADA'
+						AND a.notificaciones_activas = 1
+						AND a.id_usuario != ?`
+				)
+				.bind(idEvento, idAutor)
+				.all<{ correo_institucional: string }>();
+
+			let notificacionesEnviadas = 0;
+			if (env.RESEND_API_KEY && destinatarios.results.length > 0) {
+				const deliveries = await Promise.allSettled(
+					destinatarios.results.map((destinatario) => sendEmail(
+						env.RESEND_API_KEY!,
+						destinatario.correo_institucional,
+						`Novedad en ${evento.titulo}`,
+						buildAnnouncementEmailHtml(evento.titulo, contenido),
+					))
+				);
+				notificacionesEnviadas = deliveries.filter((delivery) => delivery.status === "fulfilled").length;
+			}
+
+			return json(
+				{
+					ok: true,
+					message: "Anuncio publicado correctamente.",
+					anuncio,
+					notificaciones_enviadas: notificacionesEnviadas,
+				},
+				{ status: 201 }
+			);
+		}
+
 
 		// -------------------------------------------------------------------------
 		// Event detail and organizer mutations
@@ -2104,6 +2268,54 @@ export default {
 			}
 		}
 
+		// PATCH notification preference for a confirmed attendance.
+		const notificacionesAsistenciaMatch = url.pathname.match(
+			/^\/eventos\/(\d+)\/asistencias\/(\d+)\/notificaciones$/
+		);
+
+		if (request.method === "PATCH" && notificacionesAsistenciaMatch) {
+			const idEvento = Number(notificacionesAsistenciaMatch[1]);
+			const idUsuario = Number(notificacionesAsistenciaMatch[2]);
+			let body: ActualizarNotificacionesBody;
+			try {
+				body = await request.json();
+			} catch {
+				return json({ ok: false, error: "El body debe ser JSON valido." }, { status: 400 });
+			}
+
+			if (typeof body.activas !== "boolean") {
+				return json({ ok: false, error: "activas debe ser booleano." }, { status: 400 });
+			}
+
+			const asistencia = await env.unparche_db
+				.prepare(
+					`SELECT id_asistencia
+					FROM asistencia
+					WHERE id_evento = ? AND id_usuario = ? AND estado = 'CONFIRMADA'`
+				)
+				.bind(idEvento, idUsuario)
+				.first();
+			if (!asistencia) {
+				return json({ ok: false, error: "Debes confirmar asistencia antes de activar avisos." }, { status: 409 });
+			}
+
+			await env.unparche_db
+				.prepare(
+					`UPDATE asistencia
+					SET notificaciones_activas = ?
+					WHERE id_evento = ? AND id_usuario = ?`
+				)
+				.bind(body.activas ? 1 : 0, idEvento, idUsuario)
+				.run();
+
+			return json({
+				ok: true,
+				id_evento: idEvento,
+				id_usuario: idUsuario,
+				notificaciones_activas: body.activas,
+			});
+		}
+
 		// DELETE asistencia (/eventos/:id/asistencias/:id_usuario)
 		const cancelarAsistenciaMatch = url.pathname.match(/^\/eventos\/(\d+)\/asistencias\/(\d+)$/);
 
@@ -2132,7 +2344,7 @@ export default {
 			await env.unparche_db
 				.prepare(
 					`UPDATE asistencia
-					SET estado = 'CANCELADA'
+					SET estado = 'CANCELADA', notificaciones_activas = 0
 					WHERE id_usuario = ?
 					AND id_evento = ?`
 				)
@@ -2255,9 +2467,11 @@ export default {
 
 			const asistenciaSelect = idUsuario === null
 				? `NULL AS estado_asistencia,
-						NULL AS fecha_confirmacion`
+						NULL AS fecha_confirmacion,
+						NULL AS notificaciones_activas`
 				: `a.estado AS estado_asistencia,
-						a.fecha_confirmacion`;
+						a.fecha_confirmacion,
+						a.notificaciones_activas`;
 			const asistenciaJoin = idUsuario === null
 				? ""
 				: `LEFT JOIN asistencia a

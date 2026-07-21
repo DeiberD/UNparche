@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import '../models/event_api_exception.dart';
+import '../models/event_announcement.dart';
 import '../models/event_summary.dart';
 import '../models/create_event_request.dart';
 import '../models/confirmed_attendee.dart';
@@ -173,6 +174,74 @@ class EventApiClient {
         .whereType<Map<String, dynamic>>()
         .map(ConfirmedAttendee.fromJson)
         .toList();
+  }
+
+  Future<List<EventAnnouncement>> fetchAnnouncements({
+    required int eventId,
+  }) async {
+    final request = await _httpClient.getUrl(
+      _baseUri.resolve('/eventos/$eventId/anuncios'),
+    );
+    final response = await request.close();
+    final decoded = await _decodeJsonMapResponse(
+      response,
+      fallbackErrorMessage: 'No se pudieron cargar los anuncios.',
+    );
+    final announcements = decoded['anuncios'];
+    if (announcements is! List) {
+      throw const EventApiException(
+        'La API devolvio una lista de anuncios inesperada.',
+      );
+    }
+
+    return announcements
+        .whereType<Map<String, dynamic>>()
+        .map(EventAnnouncement.fromJson)
+        .toList();
+  }
+
+  Future<EventAnnouncement> publishAnnouncement({
+    required int eventId,
+    required int authorId,
+    required String content,
+  }) async {
+    final request = await _httpClient.postUrl(
+      _baseUri.resolve('/eventos/$eventId/anuncios'),
+    );
+    request.headers.contentType = ContentType.json;
+    request.write(jsonEncode({'id_autor': authorId, 'contenido': content}));
+    final response = await request.close();
+    final decoded = await _decodeJsonMapResponse(
+      response,
+      fallbackErrorMessage: 'No se pudo publicar el anuncio.',
+    );
+    final announcement = decoded['anuncio'];
+    if (announcement is! Map<String, dynamic>) {
+      throw const EventApiException(
+        'La API devolvio un anuncio inesperado.',
+      );
+    }
+    return EventAnnouncement.fromJson(announcement);
+  }
+
+  Future<bool> updateAnnouncementNotifications({
+    required int eventId,
+    required int userId,
+    required bool enabled,
+  }) async {
+    final request = await _httpClient.patchUrl(
+      _baseUri.resolve(
+        '/eventos/$eventId/asistencias/$userId/notificaciones',
+      ),
+    );
+    request.headers.contentType = ContentType.json;
+    request.write(jsonEncode({'activas': enabled}));
+    final response = await request.close();
+    final decoded = await _decodeJsonMapResponse(
+      response,
+      fallbackErrorMessage: 'No se pudo actualizar la preferencia de avisos.',
+    );
+    return decoded['notificaciones_activas'] == true;
   }
 
   Future<void> deleteEvent({required int eventId, required int userId}) async {

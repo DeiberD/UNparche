@@ -25,7 +25,8 @@ class EventSummary {
     required this.status,
     required this.chatEnabled,
     required this.attendanceStatus,
-	this.archivedAt,
+    this.notificationsEnabled = false,
+    this.archivedAt,
   });
 
   factory EventSummary.fromJson(Map<String, dynamic> json) {
@@ -55,7 +56,9 @@ class EventSummary {
       status: json['estado']?.toString() ?? 'PROGRAMADO',
       chatEnabled: _toBool(json['chat_habilitado']) ?? false,
       attendanceStatus: _cleanString(json['estado_asistencia']),
-	  archivedAt: _toDateTime(json['fecha_eliminacion']),
+      notificationsEnabled:
+          _toBool(json['notificaciones_activas']) ?? false,
+      archivedAt: _toDateTime(json['fecha_eliminacion']),
     );
   }
 
@@ -84,13 +87,14 @@ class EventSummary {
   final String status;
   final bool chatEnabled;
   final String? attendanceStatus;
-	final DateTime? archivedAt;
+  final bool notificationsEnabled;
+  final DateTime? archivedAt;
 
   bool get hasLocation => latitude != null && longitude != null;
   bool get isPublic => visibility == 'PUBLICA';
   bool get isActive => status == 'PROGRAMADO' || status == 'EN_CURSO';
   bool get hasConfirmedAttendance => attendanceStatus == 'CONFIRMADA';
-	bool get isArchived => archivedAt != null;
+  bool get isArchived => archivedAt != null;
   bool get belongsToGroup => groupId != null;
   bool get hasCompleteRequiredDetails =>
       title.trim().isNotEmpty &&
@@ -142,7 +146,10 @@ class EventSummary {
     return '${lat.toStringAsFixed(5)}, ${lng.toStringAsFixed(5)}';
   }
 
-  EventSummary copyWith({String? attendanceStatus}) {
+  EventSummary copyWith({
+    String? attendanceStatus,
+    bool? notificationsEnabled,
+  }) {
     return EventSummary(
       id: id,
       title: title,
@@ -169,7 +176,9 @@ class EventSummary {
       status: status,
       chatEnabled: chatEnabled,
       attendanceStatus: attendanceStatus ?? this.attendanceStatus,
-	  archivedAt: archivedAt,
+      notificationsEnabled:
+          notificationsEnabled ?? this.notificationsEnabled,
+      archivedAt: archivedAt,
     );
   }
 
