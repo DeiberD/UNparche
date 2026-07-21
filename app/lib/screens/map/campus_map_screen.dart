@@ -1046,7 +1046,34 @@ class MapHeader extends StatelessWidget {
             ),
           ),
           IconButton(
-            onPressed: () {},
+            onPressed: () {
+              final state = context.findAncestorStateOfType<_CampusMapScreenState>();
+              if (state != null) {
+                showSearch(
+                  context: context,
+                  delegate: _EventSearchDelegate(
+                    events: state._allEvents,
+                    onEventSelected: (event) {
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => EventDetailScreen(
+                            event: event,
+                            eventApiClient: state._eventApiClient,
+                            currentUserId: AuthProvider.of(context).value.currentUser?.id ?? 0,
+                            onAttendanceChanged: (_) {
+                              state._loadVisibleEvents();
+                            },
+                            onDeleted: (_) {
+                              state._loadVisibleEvents();
+                            },
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                );
+              }
+            },
             icon: const Icon(Icons.search),
             color: campusInk,
             tooltip: 'Buscar',
@@ -1054,6 +1081,88 @@ class MapHeader extends StatelessWidget {
           const SizedBox(width: 4),
         ],
       ),
+    );
+  }
+  }
+}
+
+class _EventSearchDelegate extends SearchDelegate<EventSummary?> {
+  _EventSearchDelegate({
+    required this.events,
+    required this.onEventSelected,
+  }) : super(
+          searchFieldLabel: 'Buscar eventos...',
+          searchFieldStyle: const TextStyle(color: campusInk),
+        );
+
+  final List<EventSummary> events;
+  final void Function(EventSummary) onEventSelected;
+
+  @override
+  List<Widget> buildActions(BuildContext context) {
+    return [
+      if (query.isNotEmpty)
+        IconButton(
+          icon: const Icon(Icons.clear, color: campusInk),
+          onPressed: () => query = '',
+        ),
+    ];
+  }
+
+  @override
+  Widget buildLeading(BuildContext context) {
+    return IconButton(
+      icon: const Icon(Icons.arrow_back, color: campusInk),
+      onPressed: () => close(context, null),
+    );
+  }
+
+  @override
+  Widget buildResults(BuildContext context) => _buildSuggestionsAndResults();
+
+  @override
+  Widget buildSuggestions(BuildContext context) => _buildSuggestionsAndResults();
+
+  Widget _buildSuggestionsAndResults() {
+    final normalizedQuery = query.trim().toLowerCase();
+    
+    final results = events.where((e) {
+      return e.title.toLowerCase().contains(normalizedQuery);
+    }).toList();
+
+    if (results.isEmpty) {
+      return const Center(
+        child: Text(
+          'No se encontraron eventos.',
+          style: TextStyle(color: campusInk),
+        ),
+      );
+    }
+
+    return ListView.builder(
+      itemCount: results.length,
+      itemBuilder: (context, index) {
+        final event = results[index];
+        return ListTile(
+          leading: const CircleAvatar(
+            backgroundColor: campusSurface,
+            child: Icon(Icons.event, color: campusInk),
+          ),
+          title: Text(
+            event.title,
+            style: const TextStyle(fontWeight: FontWeight.w600, color: campusInk),
+          ),
+          subtitle: Text(
+            event.location,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+          onTap: () {
+            close(context, null);
+            onEventSelected(event);
+          },
+        );
+      },
     );
   }
 }
