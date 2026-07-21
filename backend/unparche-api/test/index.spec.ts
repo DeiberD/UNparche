@@ -626,6 +626,96 @@ describe("UNparche API worker", () => {
 		});
 	});
 
+	it("rejects event cancellation from a user who is not the organizer", async () => {
+		const request = new IncomingRequest("http://example.com/eventos/8/cancelacion", {
+			method: "PATCH",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ id_organizador: 2 }),
+		});
+		const ctx = createExecutionContext();
+		const testEnv = {
+			unparche_db: {
+				prepare: () => ({
+					bind: () => ({
+						first: async () => ({
+							id_evento: 8,
+							titulo: "Taller futuro",
+							fecha_inicio: "2026-08-01 10:00:00",
+							estado: "PROGRAMADO",
+							fecha_eliminacion: null,
+							id_organizador: 1,
+							es_futuro: 1,
+						}),
+					}),
+				}),
+			} as unknown as D1Database,
+		} as Env & { unparche_db: D1Database };
+
+		const response = await worker.fetch(request, testEnv, ctx);
+		await waitOnExecutionContext(ctx);
+
+		expect(response.status).toBe(403);
+		await expect(response.json()).resolves.toEqual({
+			ok: false,
+			error: "Solo el organizador puede cancelar este evento.",
+		});
+	});
+
+	it("cancels a future event and targets attendees for notification", async () => {
+		const evento = {
+			id_evento: 8,
+			titulo: "Taller futuro",
+			fecha_inicio: "2026-08-01 10:00:00",
+			estado: "PROGRAMADO",
+			fecha_eliminacion: null,
+			id_organizador: 1,
+			es_futuro: 1,
+		};
+		let prepareCall = 0;
+		let updateSql = "";
+		let recipientSql = "";
+		const request = new IncomingRequest("http://example.com/eventos/8/cancelacion", {
+			method: "PATCH",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ id_organizador: 1 }),
+		});
+		const ctx = createExecutionContext();
+		const testEnv = {
+			unparche_db: {
+				prepare: (query: string) => {
+					prepareCall += 1;
+					if (prepareCall === 1) {
+						return { bind: () => ({ first: async () => evento }) };
+					}
+					if (prepareCall === 2) {
+						updateSql = query;
+						return { bind: () => ({ run: async () => ({ meta: { changes: 1 } }) }) };
+					}
+					recipientSql = query;
+					return {
+						bind: () => ({
+							all: async () => ({ results: [{ correo_institucional: "user@unal.edu.co" }] }),
+						}),
+					};
+				},
+			} as unknown as D1Database,
+		} as Env & { unparche_db: D1Database };
+
+		const response = await worker.fetch(request, testEnv, ctx);
+		await waitOnExecutionContext(ctx);
+
+		expect(response.status).toBe(200);
+		expect(updateSql).toContain("estado = 'CANCELADO'");
+		expect(updateSql).toContain("chat_habilitado = 0");
+		expect(recipientSql).toContain("a.estado = 'CONFIRMADA' OR a.notificaciones_activas = 1");
+		await expect(response.json()).resolves.toEqual({
+			ok: true,
+			message: "Evento cancelado correctamente.",
+			evento: { ...evento, estado: "CANCELADO", chat_habilitado: 0 },
+			notificaciones_enviadas: 0,
+		});
+	});
+
 	it("lists attended event history including lifecycle-archived events", async () => {
 		const eventos = [
 			{
