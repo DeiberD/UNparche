@@ -71,11 +71,13 @@ class EventApiClient {
       fallbackErrorMessage: 'No se pudieron cargar los próximos eventos.',
     );
 
-    final organized = (decoded['eventos_organizados'] as List?)
+    final organized =
+        (decoded['eventos_organizados'] as List?)
             ?.whereType<Map<String, dynamic>>()
             .map(EventSummary.fromJson) ??
         [];
-    final attending = (decoded['eventos_asistencia'] as List?)
+    final attending =
+        (decoded['eventos_asistencia'] as List?)
             ?.whereType<Map<String, dynamic>>()
             .map(EventSummary.fromJson) ??
         [];
@@ -110,9 +112,7 @@ class EventApiClient {
     );
     final events = decoded['eventos'];
     if (events is! List) {
-      throw const EventApiException(
-        'La API devolvio un historial inesperado.',
-      );
+      throw const EventApiException('La API devolvio un historial inesperado.');
     }
 
     return events
@@ -217,9 +217,7 @@ class EventApiClient {
     );
     final announcement = decoded['anuncio'];
     if (announcement is! Map<String, dynamic>) {
-      throw const EventApiException(
-        'La API devolvio un anuncio inesperado.',
-      );
+      throw const EventApiException('La API devolvio un anuncio inesperado.');
     }
     return EventAnnouncement.fromJson(announcement);
   }
@@ -230,9 +228,7 @@ class EventApiClient {
     required bool enabled,
   }) async {
     final request = await _httpClient.patchUrl(
-      _baseUri.resolve(
-        '/eventos/$eventId/asistencias/$userId/notificaciones',
-      ),
+      _baseUri.resolve('/eventos/$eventId/asistencias/$userId/notificaciones'),
     );
     request.headers.contentType = ContentType.json;
     request.write(jsonEncode({'activas': enabled}));
@@ -253,6 +249,22 @@ class EventApiClient {
     await _decodeJsonMapResponse(
       response,
       fallbackErrorMessage: 'No se pudo eliminar el evento.',
+    );
+  }
+
+  Future<void> cancelEvent({
+    required int eventId,
+    required int organizerId,
+  }) async {
+    final request = await _httpClient.patchUrl(
+      _baseUri.resolve('/eventos/$eventId/cancelacion'),
+    );
+    request.headers.contentType = ContentType.json;
+    request.write(jsonEncode({'id_organizador': organizerId}));
+    final response = await request.close();
+    await _decodeJsonMapResponse(
+      response,
+      fallbackErrorMessage: 'No se pudo cancelar el evento.',
     );
   }
 

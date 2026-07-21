@@ -103,6 +103,9 @@ type ActualizarNotificacionesBody = {
 	activas?: boolean;
 };
 
+type CancelarEventoBody = {
+	id_organizador?: number;
+};
 
 // Event lifecycle rules shared by list, detail, update and cleanup queries.
 
@@ -375,6 +378,14 @@ const buildAnnouncementEmailHtml = (eventTitle: string, content: string): string
 		<h2 style="margin-bottom:8px">Novedad en ${escapeHtml(eventTitle)}</h2>
 		<p style="white-space:pre-wrap">${escapeHtml(content)}</p>
 		<p style="color:#666;font-size:12px">Recibiste este correo porque activaste las novedades del evento en UNparche.</p>
+	</div>`;
+
+/** Builds the cancellation notice sent to attendees of an event. */
+const buildCancellationEmailHtml = (eventTitle: string): string => `
+	<div style="font-family:Arial,Helvetica,sans-serif;color:#263020;line-height:1.5">
+		<h2 style="margin-bottom:8px">Evento cancelado</h2>
+		<p>El evento <strong>${escapeHtml(eventTitle)}</strong> fue cancelado por su organizador.</p>
+		<p style="color:#666;font-size:12px">Ya no aparecera entre las actividades disponibles de UNparche.</p>
 	</div>`;
 
 /** Envía un correo usando la API de Resend */
@@ -1820,6 +1831,114 @@ export default {
 		// -------------------------------------------------------------------------
 		// Event detail and organizer mutations
 		// -------------------------------------------------------------------------
+		const cancelarEventoMatch = url.pathname.match(/^\/eventos\/(\d+)\/cancelacion$/);
+
+		if (request.method === "PATCH" && cancelarEventoMatch) {
+			const idEvento = Number(cancelarEventoMatch[1]);
+			let body: CancelarEventoBody;
+			try {
+				body = await request.json();
+			} catch {
+				return json({ ok: false, error: "El body debe ser JSON valido." }, { status: 400 });
+			}
+
+			const idOrganizador = toInteger(body.id_organizador);
+			if (idOrganizador === null) {
+				return json({ ok: false, error: "id_organizador debe ser entero." }, { status: 400 });
+			}
+
+			const eventoActual = await env.unparche_db
+				.prepare(
+					`SELECT
+						id_evento,
+						titulo,
+						fecha_inicio,
+						estado,
+						fecha_eliminacion,
+						id_organizador,
+						CASE WHEN datetime(fecha_inicio) > datetime('now') THEN 1 ELSE 0 END AS es_futuro
+					FROM evento
+					WHERE id_evento = ?`
+				)
+				.bind(idEvento)
+				.first<{
+					id_evento: number;
+					titulo: string;
+					fecha_inicio: string;
+					estado: string;
+					fecha_eliminacion: string | null;
+					id_organizador: number;
+					es_futuro: number;
+				}>();
+
+			if (!eventoActual) {
+				return json({ ok: false, error: "Evento no encontrado." }, { status: 404 });
+			}
+			if (eventoActual.id_organizador !== idOrganizador) {
+				return json({ ok: false, error: "Solo el organizador puede cancelar este evento." }, { status: 403 });
+			}
+			if (
+				eventoActual.fecha_eliminacion !== null ||
+				eventoActual.estado !== "PROGRAMADO" ||
+				eventoActual.es_futuro !== 1
+			) {
+				return json({ ok: false, error: "Solo se pueden cancelar eventos futuros programados." }, { status: 409 });
+			}
+
+			const cancellation = await env.unparche_db
+				.prepare(
+					`UPDATE evento
+					SET estado = 'CANCELADO', chat_habilitado = 0
+					WHERE id_evento = ?
+						AND id_organizador = ?
+						AND estado = 'PROGRAMADO'
+						AND fecha_eliminacion IS NULL
+						AND datetime(fecha_inicio) > datetime('now')`
+				)
+				.bind(idEvento, idOrganizador)
+				.run();
+
+			if (Number(cancellation.meta.changes ?? 0) === 0) {
+				return json({ ok: false, error: "El evento ya no se puede cancelar." }, { status: 409 });
+			}
+
+			const destinatarios = await env.unparche_db
+				.prepare(
+					`SELECT DISTINCT u.correo_institucional
+					FROM asistencia a
+					JOIN usuario u ON u.id_usuario = a.id_usuario
+					WHERE a.id_evento = ?
+						AND (a.estado = 'CONFIRMADA' OR a.notificaciones_activas = 1)
+						AND a.id_usuario != ?`
+				)
+				.bind(idEvento, idOrganizador)
+				.all<{ correo_institucional: string }>();
+
+			let notificacionesEnviadas = 0;
+			if (env.RESEND_API_KEY && destinatarios.results.length > 0) {
+				const deliveries = await Promise.allSettled(
+					destinatarios.results.map((destinatario) => sendEmail(
+						env.RESEND_API_KEY!,
+						destinatario.correo_institucional,
+						`Evento cancelado: ${eventoActual.titulo}`,
+						buildCancellationEmailHtml(eventoActual.titulo),
+					))
+				);
+				notificacionesEnviadas = deliveries.filter((delivery) => delivery.status === "fulfilled").length;
+			}
+
+			return json({
+				ok: true,
+				message: "Evento cancelado correctamente.",
+				evento: {
+					...eventoActual,
+					estado: "CANCELADO",
+					chat_habilitado: 0,
+				},
+				notificaciones_enviadas: notificacionesEnviadas,
+			});
+		}
+
 		// GET eventos/id
 		const eventoMatch = url.pathname.match(/^\/eventos\/(\d+)$/);
 
