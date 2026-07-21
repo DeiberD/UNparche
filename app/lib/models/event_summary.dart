@@ -56,8 +56,7 @@ class EventSummary {
       status: json['estado']?.toString() ?? 'PROGRAMADO',
       chatEnabled: _toBool(json['chat_habilitado']) ?? false,
       attendanceStatus: _cleanString(json['estado_asistencia']),
-      notificationsEnabled:
-          _toBool(json['notificaciones_activas']) ?? false,
+      notificationsEnabled: _toBool(json['notificaciones_activas']) ?? false,
       archivedAt: _toDateTime(json['fecha_eliminacion']),
     );
   }
@@ -93,6 +92,7 @@ class EventSummary {
   bool get hasLocation => latitude != null && longitude != null;
   bool get isPublic => visibility == 'PUBLICA';
   bool get isActive => status == 'PROGRAMADO' || status == 'EN_CURSO';
+  bool get isCancelled => status == 'CANCELADO';
   bool get hasConfirmedAttendance => attendanceStatus == 'CONFIRMADA';
   bool get isArchived => archivedAt != null;
   bool get belongsToGroup => groupId != null;
@@ -149,6 +149,8 @@ class EventSummary {
   EventSummary copyWith({
     String? attendanceStatus,
     bool? notificationsEnabled,
+    String? status,
+    bool? chatEnabled,
   }) {
     return EventSummary(
       id: id,
@@ -173,11 +175,10 @@ class EventSummary {
       groupVerificationStatus: groupVerificationStatus,
       eventTypeId: eventTypeId,
       eventTypeName: eventTypeName,
-      status: status,
-      chatEnabled: chatEnabled,
+      status: status ?? this.status,
+      chatEnabled: chatEnabled ?? this.chatEnabled,
       attendanceStatus: attendanceStatus ?? this.attendanceStatus,
-      notificationsEnabled:
-          notificationsEnabled ?? this.notificationsEnabled,
+      notificationsEnabled: notificationsEnabled ?? this.notificationsEnabled,
       archivedAt: archivedAt,
     );
   }
