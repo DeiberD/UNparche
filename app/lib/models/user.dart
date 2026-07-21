@@ -9,6 +9,7 @@ class User {
   final String? nickname;
   final String? rol;
   final String? fechaCreacion;
+  final int? friendshipId; // ID de la relación de amistad (si aplica)
 
   User({
     required this.id,
@@ -21,6 +22,7 @@ class User {
     this.nickname,
     this.rol,
     this.fechaCreacion,
+    this.friendshipId,
   });
 
   factory User.fromJson(Map<String, dynamic> json) {
@@ -35,6 +37,7 @@ class User {
       nickname: json['nickname'] as String?,
       rol: json['rol'] as String?,
       fechaCreacion: json['fecha_creacion'] as String?,
+      friendshipId: json['id_amistad'] as int?,
     );
   }
 

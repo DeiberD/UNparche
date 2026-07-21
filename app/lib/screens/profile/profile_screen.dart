@@ -6,6 +6,8 @@ import '../../services/event_api_client.dart';
 import '../../models/group_summary.dart';
 import '../../models/event_summary.dart';
 import '../events/attendance_history_screen.dart';
+import '../groups/group_members_screen.dart';
+import '../events/event_detail_screen.dart';
 
 /// User profile screen
 ///
@@ -461,6 +463,18 @@ class _GroupsListState extends State<_GroupsList> {
   final _client = GroupApiClient();
   Future<List<GroupSummary>>? _groups;
 
+  void _refresh() {
+    setState(() {
+      _groups = _client
+        .fetchGroups(userId: AuthProvider.of(context).value.currentUser!.id)
+        .then(
+          (groups) => groups
+              .where((group) => group.isMember || group.isCreator)
+              .toList(),
+        );
+    });
+  }
+
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
@@ -548,7 +562,24 @@ class _GroupsListState extends State<_GroupsList> {
               ),
 
               // Groups list
-              ...groups.map((group) => _ProfileGroupTile(group: group)),
+              ...groups.map(
+                (group) => _ProfileGroupTile(
+                  group: group,
+                  onTap: () async {
+                    final didLeave = await Navigator.of(context).push<bool>(
+                      MaterialPageRoute(
+                        builder: (_) => GroupMembersScreen(
+                          group: group,
+                          groupApiClient: _client,
+                        ),
+                      ),
+                    );
+                    if (didLeave == true && mounted) {
+                      _refresh();
+                    }
+                  },
+                ),
+              ),
             ],
           ),
         );
@@ -558,16 +589,17 @@ class _GroupsListState extends State<_GroupsList> {
 }
 
 class _ProfileGroupTile extends StatelessWidget {
-  const _ProfileGroupTile({required this.group});
+  const _ProfileGroupTile({required this.group, this.onTap});
 
   final GroupSummary group;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
     return Material(
       color: Colors.transparent,
       child: InkWell(
-        onTap: null,
+        onTap: onTap,
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
           child: Row(
@@ -641,6 +673,17 @@ class _UpcomingEventsListState extends State<_UpcomingEventsList> {
   final _client = EventApiClient();
   Future<List<EventSummary>>? _events;
 
+  void _refresh() {
+    setState(() {
+      _events = _client.fetchUserUpcomingEvents(
+        AuthProvider.of(context).value.currentUser!.id,
+      ).then((events) {
+        final now = DateTime.now();
+        return events.where((e) => e.start != null && e.start!.isAfter(now)).toList();
+      });
+    });
+  }
+
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
@@ -654,6 +697,7 @@ class _UpcomingEventsListState extends State<_UpcomingEventsList> {
 
   @override
   Widget build(BuildContext context) {
+    final currentUserId = AuthProvider.of(context).value.currentUser!.id;
     return FutureBuilder<List<EventSummary>>(
       future: _events,
       builder: (context, snapshot) {
@@ -680,7 +724,26 @@ class _UpcomingEventsListState extends State<_UpcomingEventsList> {
           children: events.map((event) {
             return Padding(
               padding: const EdgeInsets.only(bottom: 12),
-              child: _EventTile(event: event),
+              child: _EventTile(
+                event: event,
+                onTap: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => EventDetailScreen(
+                        event: event,
+                        eventApiClient: _client,
+                        currentUserId: currentUserId,
+                        onAttendanceChanged: (_) {
+                          _refresh();
+                        },
+                        onDeleted: (_) {
+                          _refresh();
+                        },
+                      ),
+                    ),
+                  );
+                },
+              ),
             );
           }).toList(),
         );
@@ -702,9 +765,10 @@ String _formatDate(DateTime date) {
 
 /// Individual event tile
 class _EventTile extends StatelessWidget {
-  const _EventTile({required this.event});
+  const _EventTile({required this.event, this.onTap});
 
   final EventSummary event;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
@@ -713,12 +777,7 @@ class _EventTile extends StatelessWidget {
       borderRadius: BorderRadius.circular(18),
       child: InkWell(
         borderRadius: BorderRadius.circular(18),
-        onTap: () {
-          // TODO: Navigate to event details
-          ScaffoldMessenger.of(
-            context,
-          ).showSnackBar(SnackBar(content: Text('Abriendo ${event.title}')));
-        },
+        onTap: onTap,
         child: Container(
           padding: const EdgeInsets.all(14),
           decoration: BoxDecoration(

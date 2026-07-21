@@ -4,7 +4,7 @@ import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart';
 import 'theme/campus_colors.dart';
 
 import 'state/auth_state.dart';
-import 'screens/auth/login_screen.dart';
+
 import 'screens/auth/welcome_screen.dart';
 import 'screens/map/campus_map_screen.dart';
 

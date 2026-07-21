@@ -2,10 +2,16 @@ import 'package:flutter/material.dart';
 import '../../models/user.dart';
 
 class FriendTile extends StatelessWidget {
-  const FriendTile({super.key, required this.friend, this.onTap});
+  const FriendTile({
+    super.key,
+    required this.friend,
+    this.onTap,
+    this.onDelete,
+  });
 
   final User friend;
   final VoidCallback? onTap;
+  final VoidCallback? onDelete;
 
   @override
   Widget build(BuildContext context) {
@@ -24,7 +30,18 @@ class FriendTile extends StatelessWidget {
       ),
       title: Text(fullName, maxLines: 1, overflow: TextOverflow.ellipsis),
       subtitle: _buildSubtitle(),
-      trailing: const Icon(Icons.chevron_right),
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (onDelete != null)
+            IconButton(
+              icon: const Icon(Icons.person_remove, color: Colors.red),
+              onPressed: onDelete,
+              tooltip: 'Eliminar amigo',
+            ),
+          const Icon(Icons.chevron_right),
+        ],
+      ),
       onTap: onTap,
     );
   }

@@ -4,6 +4,7 @@ import '../../services/group_api_client.dart';
 import '../../models/group_summary.dart';
 import '../../models/group_member.dart';
 import '../../models/group_api_exception.dart';
+import '../../state/auth_state.dart';
 
 class GroupMembersScreen extends StatefulWidget {
   const GroupMembersScreen({
@@ -39,8 +40,70 @@ class _GroupMembersScreenState extends State<GroupMembersScreen> {
     await _members;
   }
 
+  Future<void> _leaveGroup() async {
+    final currentUser = AuthProvider.of(context).value.currentUser;
+    if (currentUser == null) return;
+
+    final membersList = await _members;
+    final myMembership = membersList.where((m) => m.userId == currentUser.id).firstOrNull;
+
+    if (myMembership == null) return;
+
+    if (myMembership.isAdministrator) {
+      final otherAdmins = membersList.where((m) => m.isAdministrator && m.userId != currentUser.id);
+      if (otherAdmins.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Eres el único administrador. Transfiere la administración antes de salir.')),
+        );
+        return;
+      }
+    }
+
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Salir del grupo'),
+        content: const Text('¿Estás seguro de que quieres salir de este grupo?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancelar'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: const Text('Salir'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true || !mounted) return;
+
+    try {
+      await widget.groupApiClient.leaveGroup(
+        groupId: widget.group.id!,
+        userId: currentUser.id,
+      );
+
+      if (!mounted) return;
+      
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Has salido del grupo.')),
+      );
+      Navigator.of(context).pop(true); // Return true to refresh parent
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.toString().replaceAll('Exception: ', ''))),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    final currentUserId = AuthProvider.of(context).value.currentUser?.id;
+
     return Scaffold(
       backgroundColor: const Color(0xFFFBF5F2),
       appBar: AppBar(
@@ -50,6 +113,24 @@ class _GroupMembersScreenState extends State<GroupMembersScreen> {
           widget.group.name,
           style: const TextStyle(fontWeight: FontWeight.w800),
         ),
+        actions: [
+          FutureBuilder<List<GroupMember>>(
+            future: _members,
+            builder: (context, snapshot) {
+              if (!snapshot.hasData || currentUserId == null) return const SizedBox();
+              final membersList = snapshot.data!;
+              final myMembership = membersList.where((m) => m.userId == currentUserId).firstOrNull;
+              
+              if (myMembership == null) return const SizedBox();
+              
+              return IconButton(
+                icon: const Icon(Icons.exit_to_app, color: Colors.red),
+                tooltip: 'Salir del grupo',
+                onPressed: _leaveGroup,
+              );
+            },
+          ),
+        ],
       ),
       body: FutureBuilder<List<GroupMember>>(
         future: _members,

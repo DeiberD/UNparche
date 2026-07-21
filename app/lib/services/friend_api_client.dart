@@ -247,4 +247,28 @@ class FriendApiClient {
       );
     }
   }
+
+  // DELETE /amistades/{id} (via PATCH estado=ELIMINADA)
+  Future<void> removeFriend({required int friendshipId}) async {
+    final request = await _httpClient.patchUrl(
+      _baseUri.resolve('/amistades/$friendshipId'),
+    );
+
+    request.headers.contentType = ContentType.json;
+    request.write(jsonEncode({'estado': 'ELIMINADA'}));
+
+    final response = await request.close();
+    final responseBody = await response.transform(utf8.decoder).join();
+    final decoded = responseBody.isEmpty ? null : jsonDecode(responseBody);
+
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      final message = decoded is Map<String, dynamic>
+          ? decoded['error']?.toString()
+          : null;
+      throw FriendApiException(
+        message ?? 'No se pudo eliminar al amigo.',
+        statusCode: response.statusCode,
+      );
+    }
+  }
 }

@@ -72,11 +72,7 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
-  void _showNotImplemented(String feature) {
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text('$feature está en construcción.')));
-  }
+
 
   @override
   void dispose() {

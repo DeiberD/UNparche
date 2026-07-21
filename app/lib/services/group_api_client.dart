@@ -111,6 +111,29 @@ class GroupApiClient {
         .toList();
   }
 
+  Future<void> leaveGroup({
+    required int groupId,
+    required int userId,
+  }) async {
+    final request = await _httpClient.deleteUrl(
+      _baseUri.resolve('/grupos/$groupId/miembros/$userId'),
+    );
+
+    final response = await request.close();
+    final responseBody = await response.transform(utf8.decoder).join();
+    final decoded = responseBody.isEmpty ? null : jsonDecode(responseBody);
+
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      final message = decoded is Map<String, dynamic>
+          ? decoded['error']?.toString()
+          : null;
+      throw GroupApiException(
+        message ?? 'No se pudo salir del grupo.',
+        statusCode: response.statusCode,
+      );
+    }
+  }
+
   Future<void> deleteGroup({required int groupId, required int userId}) async {
     final uri = _baseUri
         .resolve('/grupos/$groupId')
