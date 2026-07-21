@@ -14,6 +14,95 @@ class FriendApiClient {
   final Uri _baseUri;
   final HttpClient _httpClient;
 
+  // GET /usuarios/{id}
+  Future<Map<String, dynamic>> fetchUserProfile({
+    required int userId,
+    required String token,
+  }) async {
+    final request = await _httpClient.getUrl(
+      _baseUri.resolve('/usuarios/$userId'),
+    );
+
+    request.headers.set(HttpHeaders.authorizationHeader, 'Bearer $token');
+
+    final response = await request.close();
+
+    final responseBody = await response.transform(utf8.decoder).join();
+
+    final decoded = responseBody.isEmpty ? null : jsonDecode(responseBody);
+
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      final message = decoded is Map<String, dynamic>
+          ? decoded['error']?.toString()
+          : null;
+
+      throw FriendApiException(
+        message ?? 'No se pudo cargar el perfil del usuario.',
+        statusCode: response.statusCode,
+      );
+    }
+
+    if (decoded is! Map<String, dynamic> ||
+        decoded['usuario'] is! Map<String, dynamic>) {
+      throw const FriendApiException(
+        'La API devolvió una respuesta inesperada.',
+      );
+    }
+
+    return {
+      'usuario': User.fromJson(decoded['usuario'] as Map<String, dynamic>),
+      'estadoAmistad': decoded['estado_amistad'] as String,
+    };
+  }
+
+  // GET /usuarios?buscar={texto}
+  Future<List<User>> searchUsers({
+    required String query,
+    required String token,
+  }) async {
+    final normalizedQuery = query.trim();
+
+    if (normalizedQuery.isEmpty) {
+      return [];
+    }
+
+    final uri = _baseUri
+        .resolve('/usuarios')
+        .replace(queryParameters: {'buscar': normalizedQuery});
+
+    final request = await _httpClient.getUrl(uri);
+
+    request.headers.set(HttpHeaders.authorizationHeader, 'Bearer $token');
+
+    final response = await request.close();
+
+    final responseBody = await response.transform(utf8.decoder).join();
+
+    final decoded = responseBody.isEmpty ? null : jsonDecode(responseBody);
+
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      final message = decoded is Map<String, dynamic>
+          ? decoded['error']?.toString()
+          : null;
+
+      throw FriendApiException(
+        message ?? 'No se pudieron buscar usuarios.',
+        statusCode: response.statusCode,
+      );
+    }
+
+    if (decoded is! Map<String, dynamic> || decoded['usuarios'] is! List) {
+      throw const FriendApiException(
+        'La API devolvió una respuesta inesperada.',
+      );
+    }
+
+    return (decoded['usuarios'] as List)
+        .whereType<Map<String, dynamic>>()
+        .map(User.fromJson)
+        .toList();
+  }
+
   // GET /usuarios/{id}/amigos
   Future<List<User>> fetchFriends({required int userId}) async {
     final request = await _httpClient.getUrl(

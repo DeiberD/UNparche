@@ -937,6 +937,67 @@ export default {
 			return json({ ok: true, usuario });
 		}
 
+		// GET /usuarios?buscar=texto
+		if (request.method === "GET" && url.pathname === "/usuarios") {
+			const payload = await verifyToken(request, env as AppEnv);
+			if (!payload) {
+				return json(
+					{ ok: false, error: "No autorizado" },
+					{ status: 401 }
+				);
+			}
+
+			const buscar = url.searchParams.get("buscar")?.trim();
+
+			if (!buscar) {
+				return json(
+					{
+						ok: false,
+						error: "Debe proporcionar un texto de búsqueda."
+					},
+					{ status: 400 }
+				);
+			}
+
+			const textoBusqueda = `%${buscar.toLowerCase()}%`;
+
+			const usuarios = await env.unparche_db.prepare(
+				`
+				SELECT
+					id_usuario,
+					nombre,
+					apellido,
+					nickname,
+					correo_institucional,
+					carrera,
+					foto_perfil
+				FROM usuario
+				WHERE id_usuario != ?
+				AND (
+						lower(nombre) LIKE ?
+						OR lower(apellido) LIKE ?
+						OR lower(COALESCE(nickname, '')) LIKE ?
+						OR lower(correo_institucional) LIKE ?
+				)
+				ORDER BY nombre ASC, apellido ASC
+				LIMIT 20
+				`
+			)
+			.bind(
+				payload.id,
+				textoBusqueda,
+				textoBusqueda,
+				textoBusqueda,
+				textoBusqueda
+			)
+			.all();
+
+			return json({
+				ok: true,
+				usuarios: usuarios.results
+			});
+		}
+
 		// PATCH /usuarios/me
 		if (request.method === "PATCH" && url.pathname === "/usuarios/me") {
 			const payload = await verifyToken(request, env as AppEnv);
@@ -1494,6 +1555,16 @@ export default {
 		const usuarioMatch = url.pathname.match(/^\/usuarios\/(\d+)$/);
 
 		if (request.method === "GET" && usuarioMatch) {
+			const payload = await verifyToken(request, env as AppEnv);
+
+			if (!payload) {
+				return json(
+					{ ok: false, error: "No autorizado" },
+					{ status: 401 }
+				);
+			}
+
+			const idUsuarioActual = payload.id;
 			const idUsuario = Number(usuarioMatch[1]);
 
 			const usuario = await env.unparche_db
@@ -1503,9 +1574,11 @@ export default {
 						correo_institucional,
 						nombre,
 						apellido,
+						nickname,
 						carrera,
 						informacion_personal,
 						rol,
+						foto_perfil,
 						fecha_creacion
 					FROM usuario
 					WHERE id_usuario = ?`
@@ -1517,7 +1590,53 @@ export default {
 				return json({ ok: false, error: "Usuario no encontrado." }, { status: 404 });
 			}
 
-			return json({ ok: true, usuario });
+			const amistad = await env.unparche_db
+				.prepare(
+					`SELECT
+						id_amistad,
+						id_solicitante,
+						id_receptor,
+						estado
+					FROM amistad
+					WHERE
+						(id_solicitante = ? AND id_receptor = ?)
+						OR
+						(id_solicitante = ? AND id_receptor = ?)
+					ORDER BY id_amistad DESC
+					LIMIT 1`
+				)
+				.bind(
+					idUsuarioActual,
+					idUsuario,
+					idUsuario,
+					idUsuarioActual
+				)
+				.first<{
+					id_amistad: number;
+					id_solicitante: number;
+					id_receptor: number;
+					estado: string;
+				}>();
+
+			let estadoAmistad =
+				idUsuarioActual === idUsuario ? "PROPIO" : "NINGUNA";
+
+			if (amistad && idUsuarioActual !== idUsuario) {
+				if (amistad.estado === "ACEPTADA") {
+					estadoAmistad = "AMIGOS";
+				} else if (amistad.estado === "PENDIENTE") {
+					estadoAmistad =
+						amistad.id_solicitante === idUsuarioActual
+							? "PENDIENTE_ENVIADA"
+							: "PENDIENTE_RECIBIDA";
+				}
+			}
+
+			return json({
+				ok: true,
+				usuario,
+				estado_amistad: estadoAmistad,
+			});
 		}
 
 		// HU-24 intentionally includes soft-deleted rows produced by HU-36.

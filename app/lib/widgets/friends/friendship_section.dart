@@ -8,6 +8,7 @@ import '../../state/auth_state.dart';
 import '../../theme/campus_colors.dart';
 import 'friend_request_tile.dart';
 import 'friend_tile.dart';
+import '../../screens/profile/user_profile_screen.dart';
 
 class FriendshipSection extends StatefulWidget {
   const FriendshipSection({super.key});
@@ -19,9 +20,21 @@ class FriendshipSection extends StatefulWidget {
 class _FriendshipSectionState extends State<FriendshipSection> {
   final FriendApiClient _client = FriendApiClient();
   final Set<int> _processingRequestIds = {};
+  final TextEditingController _searchController = TextEditingController();
+
+  List<User> _searchResults = [];
+  bool _isSearching = false;
+  bool _hasSearched = false;
+  String? _searchError;
 
   Future<List<FriendRequest>>? _requests;
   Future<List<User>>? _friends;
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
 
   @override
   void didChangeDependencies() {
@@ -42,6 +55,10 @@ class _FriendshipSectionState extends State<FriendshipSection> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        const _FriendshipSectionTitle(title: 'Buscar personas'),
+        const SizedBox(height: 12),
+        _buildUserSearch(),
+        const SizedBox(height: 28),
         const _FriendshipSectionTitle(title: 'Solicitudes de amistad'),
         const SizedBox(height: 12),
         FutureBuilder<List<FriendRequest>>(
@@ -158,13 +175,7 @@ class _FriendshipSectionState extends State<FriendshipSection> {
                     (friend) => FriendTile(
                       friend: friend,
                       onTap: () {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text(
-                              'Perfil de ${friend.nombre} ${friend.apellido}',
-                            ),
-                          ),
-                        );
+                        _openUserProfile(friend.id);
                       },
                     ),
                   ),
@@ -175,6 +186,203 @@ class _FriendshipSectionState extends State<FriendshipSection> {
         ),
       ],
     );
+  }
+
+  Widget _buildUserSearch() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        TextField(
+          controller: _searchController,
+          textInputAction: TextInputAction.search,
+          onSubmitted: (_) {
+            _searchUsers();
+          },
+          decoration: InputDecoration(
+            hintText: 'Buscar por nombre, apellido o correo',
+            prefixIcon: const Icon(Icons.search),
+            suffixIcon: IconButton(
+              onPressed: _isSearching ? null : _searchUsers,
+              icon: const Icon(Icons.arrow_forward),
+            ),
+            filled: true,
+            fillColor: Colors.white.withAlpha(238),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(18),
+              borderSide: BorderSide(color: campusInk.withAlpha(20)),
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(18),
+              borderSide: BorderSide(color: campusInk.withAlpha(20)),
+            ),
+          ),
+        ),
+        const SizedBox(height: 12),
+        if (_isSearching)
+          const Center(
+            child: Padding(
+              padding: EdgeInsets.all(16),
+              child: CircularProgressIndicator(),
+            ),
+          )
+        else if (_searchError != null)
+          _FriendshipMessage(message: _searchError!)
+        else if (_hasSearched && _searchResults.isEmpty)
+          const _FriendshipMessage(message: 'No se encontraron usuarios.')
+        else if (_searchResults.isNotEmpty)
+          Container(
+            decoration: BoxDecoration(
+              color: Colors.white.withAlpha(238),
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(color: campusInk.withAlpha(20)),
+            ),
+            child: Column(
+              children: _searchResults
+                  .map(
+                    (user) => ListTile(
+                      leading: _buildSearchAvatar(user),
+                      title: Text(
+                        '${user.nombre} ${user.apellido}',
+                        style: const TextStyle(
+                          color: campusInk,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      subtitle: Text(
+                        _buildSearchSubtitle(user),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      trailing: const Icon(Icons.chevron_right),
+                      onTap: () {
+                        _openUserProfile(user.id);
+                      },
+                    ),
+                  )
+                  .toList(),
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _buildSearchAvatar(User user) {
+    final photo = user.fotoPerfil?.trim();
+    final hasPhoto = photo != null && photo.isNotEmpty;
+
+    return CircleAvatar(
+      backgroundImage: hasPhoto ? NetworkImage(photo) : null,
+      child: hasPhoto
+          ? null
+          : Text(user.nombre.isNotEmpty ? user.nombre[0].toUpperCase() : '?'),
+    );
+  }
+
+  String _buildSearchSubtitle(User user) {
+    final values = <String>[];
+
+    final nickname = user.nickname?.trim();
+    final career = user.carrera?.trim();
+
+    if (nickname != null && nickname.isNotEmpty) {
+      values.add('@$nickname');
+    }
+
+    if (career != null && career.isNotEmpty) {
+      values.add(career);
+    }
+
+    if (values.isEmpty) {
+      return user.correoInstitucional;
+    }
+
+    return values.join(' · ');
+  }
+
+  Future<void> _searchUsers() async {
+    final query = _searchController.text.trim();
+
+    if (query.isEmpty) {
+      setState(() {
+        _searchResults = [];
+        _hasSearched = false;
+        _searchError = null;
+      });
+      return;
+    }
+
+    final authState = AuthProvider.of(context).value;
+    final token = authState.token;
+
+    if (token == null) {
+      setState(() {
+        _searchError = 'No se pudo identificar la sesión actual.';
+        _hasSearched = true;
+      });
+      return;
+    }
+
+    setState(() {
+      _isSearching = true;
+      _hasSearched = true;
+      _searchError = null;
+    });
+
+    try {
+      final users = await _client.searchUsers(query: query, token: token);
+
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        _searchResults = users;
+        _isSearching = false;
+      });
+    } on FriendApiException catch (error) {
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        _searchResults = [];
+        _searchError = error.message;
+        _isSearching = false;
+      });
+    } catch (_) {
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        _searchResults = [];
+        _searchError = 'No se pudieron buscar usuarios.';
+        _isSearching = false;
+      });
+    }
+  }
+
+  Future<void> _openUserProfile(int userId) async {
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => UserProfileScreen(userId: userId),
+      ),
+    );
+
+    if (!mounted) {
+      return;
+    }
+
+    final currentUser = AuthProvider.of(context).value.currentUser;
+
+    if (currentUser == null) {
+      return;
+    }
+
+    setState(() {
+      _friends = _client.fetchFriends(userId: currentUser.id);
+      _requests = _client.fetchPendingRequests(userId: currentUser.id);
+    });
   }
 
   Future<void> _respondToRequest({
